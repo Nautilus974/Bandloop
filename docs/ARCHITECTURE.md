@@ -3,103 +3,130 @@
 ## Vue d'ensemble
 
 ```
-┌──────────────────────── Processus principal (Node) ────────────────────────┐
-│ src/main/main.js   fenêtre, cycle de vie de l'app, sécurité                 │
-│ src/main/ipc.js    boîte de dialogue « ouvrir », lecture des fichiers       │
-└──────────────▲──────────────────────────────────────────────────────────────┘
+┌──────────────────────── Processus principal (Node) ─────────────────────────┐
+│ src/main/main.js   fenêtre, protocole app://, sécurité                       │
+│ src/main/ipc.js    boîte « ouvrir », lecture des fichiers, presets.json      │
+└──────────────▲───────────────────────────────────────────────────────────────┘
                │ IPC (ipcRenderer.invoke ↔ ipcMain.handle)
-┌──────────────┴───────── Preload (src/preload/preload.cjs) ──────────────────┐
-│ contextBridge → window.bandloop.openAudioFiles()                            │
-└──────────────▲──────────────────────────────────────────────────────────────┘
+┌──────────────┴───────── Preload (src/preload/preload.cjs) ───────────────────┐
+│ contextBridge → window.bandloop.{ openAudioFiles, presets.load/save }        │
+└──────────────▲───────────────────────────────────────────────────────────────┘
                │
-┌──────────────┴───────── Renderer (Chromium, sans accès Node) ───────────────┐
-│ app.js                     colle UI ↔ moteur, transport, raccourcis, drag&drop│
-│ audio/AudioEngine.js       AudioContext, bus master, transport, horloge      │
-│ audio/Track.js             AudioBuffer + GainNode + source de lecture        │
-│ audio/scheduling.js        calculs purs : planification, dB → gain           │
-│ audio/peaks.js             calcul des formes d'onde (min/max)                │
-│ ui/Timeline.js             canvas : règle, clips, formes d'onde, tête        │
-│ ui/TrackHeaders.js         en-têtes de piste : nom, volume, mute, suppression│
-│ ui/time.js, ui/layout.js   formatage du temps, dimensions partagées          │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌──────────────┴───────── Renderer (Chromium, sans accès Node) ────────────────┐
+│ app.js                  relie moteur, moteur vocal, presets et interface     │
+│ audio/                  AudioEngine (transport, master, limiteur, VU),       │
+│                         Track (tranche de console), mixage, pics, planif.    │
+│ vocal/                  moteur vocal — voir MOTEUR-VOCAL.md                  │
+│   settings.js           schéma des réglages, validation                      │
+│   theory.js             gammes, tonalités, intervalles                       │
+│   dsp/                  YIN, correction, PSOLA, vocodeur, bourdon (purs)     │
+│   VocalHub.js           état vocal par piste, rendu, chaîne temps réel       │
+│   voice-worker.js       Web Worker du rendu hors temps réel                  │
+│   fx/                   catalogue, nœuds Web Audio, courbes, FxChain         │
+│   worklets/             AudioWorklet de bitcrush                             │
+│ presets/                24 presets fournis, PresetStore, stockage            │
+│ ui/                     Timeline (canvas), TrackPanel, FxPanel, Knob, Meter, │
+│                         contrôles génériques, dialogues, icônes              │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Règle principale : le processus principal ne touche jamais à l'audio.** Il
 s'occupe des fenêtres et du système de fichiers. Tout le traitement audio se fait
-dans le renderer, où vivent la Web Audio API et son thread audio temps réel.
+dans le renderer : la Web Audio API (thread audio temps réel), un Web Worker pour
+les calculs lourds et un AudioWorklet pour le bitcrush.
 
 ## Sécurité Electron
 
 - `contextIsolation: true`, `nodeIntegration: false` et `sandbox: true` : le
   renderer n'a aucun accès à Node.
-- Le preload n'expose qu'une API minimale et typée (`window.bandloop`).
+- Le preload n'expose qu'une API minimale (`window.bandloop`).
+- Le renderer est servi par un protocole `app://` (au lieu de `file://`). Cela
+  lui donne une vraie origine, nécessaire aux modules ES dans les Workers et les
+  AudioWorklets. Le gestionnaire refuse tout chemin hors de `src/renderer`.
 - Une CSP stricte est définie dans `index.html`, sans script inline ni distant.
+  Les polices sont embarquées (Inter, JetBrains Mono, licence OFL).
 - Toute navigation est bloquée (`will-navigate`) et l'ouverture de fenêtres
   refusée.
 
 ## Chemin d'une piste : du fichier au haut-parleur
 
-1. **Import.** `ipc.js` ouvre la boîte de dialogue et lit les octets bruts avec
-   `fs.readFile`. Ils traversent l'IPC sous forme de `Uint8Array`. Le
-   glisser-déposer passe par `File.arrayBuffer()` et ne fait pas appel à l'IPC.
-2. **Décodage.** `AudioContext.decodeAudioData` produit un `AudioBuffer` (PCM
-   float32, ré-échantillonné à la fréquence du contexte). Il prend en charge
-   WAV, MP3, OGG/Opus, FLAC et AAC/M4A, avec les codecs de Chromium.
-3. **Forme d'onde.** `computePeaks` calcule une fois pour toutes les min/max par
-   tranche d'environ 5 ms (environ 200 pics/s). À chaque zoom, la timeline
-   ré-agrège ces pics par colonne de pixels (`peakRange`) sans relire le PCM.
+1. **Import.** `ipc.js` ouvre la boîte de dialogue et lit les octets bruts, ou
+   le glisser-déposer passe par `File.arrayBuffer()`.
+2. **Décodage.** `decodeAudioData` produit un `AudioBuffer` (PCM float32).
+3. **Forme d'onde.** Les min/max sont calculés une fois, à environ 200 pics/s,
+   puis ré-agrégés à chaque zoom.
 4. **Graphe audio.**
 
    ```
-   AudioBufferSourceNode → GainNode (piste) ┐
-   AudioBufferSourceNode → GainNode (piste) ├→ GainNode (master) → destination
-   AudioBufferSourceNode → GainNode (piste) ┘
+   AudioBufferSourceNode ─ input ─ [FxChain : effets temps réel] ─ StereoPanner ─ fader ─┐
+         (audio d'origine ou rendu vocal)                       (volume × mute × solo)   │
+                                                                                         ├─ master ─ limiteur ─ sortie
+   … une tranche par piste …                                                             ┘            └─ analyseurs (VU)
    ```
+
+   Le **fader** applique `effectiveGain()` : volume en dB, mute, et solo. Dès
+   qu'une piste est en solo, les autres sont coupées ; le mute l'emporte.
+
+   Le **limiteur** (`DynamicsCompressorNode`, -1 dBFS, ratio 20:1) protège la
+   sortie : les harmonies et les effets peuvent dépasser 0 dBFS. En interne,
+   Web Audio travaille en flottant et rien ne sature avant la sortie.
 
 ## Transport et synchronisation
 
 - L'horloge de référence est `AudioContext.currentTime`, l'horloge matérielle
-  de la carte son, et non `Date.now()` ni `requestAnimationFrame`.
+  de la carte son.
 - **Play** : on fixe un instant commun `when = currentTime + 50 ms`, et chaque
-  piste appelle `source.start(when, offset)`. Toutes les pistes démarrent ainsi
-  au même échantillon. Les 50 ms laissent le temps de créer les sources.
+  piste appelle `source.start(when, offset)`. Toutes les pistes démarrent au
+  même échantillon.
 - **Position** = `positionAuDémarrage + (currentTime − when)`. C'est un calcul,
-  pas un compteur : la position ne dérive pas, même si l'interface rame.
-- **Pause / seek** : une `AudioBufferSourceNode` ne peut être démarrée qu'une
-  fois. On arrête donc les sources, puis on en recrée de nouvelles à la
-  nouvelle position. C'est peu coûteux, car le buffer décodé est partagé.
-- `computeSourceSchedule` gère déjà les clips qui ne commencent pas à 0
-  (`track.startTime`). C'est la base pour déplacer des clips sur la timeline.
-- Les changements de volume passent par `setTargetAtTime`, lissé sur environ
-  15 ms, pour éviter les clics.
+  pas un compteur, donc il ne dérive pas.
+- **Pause, seek et remplacement de l'audio** (rendu vocal terminé) : on arrête
+  la source et on en recrée une à la position courante.
+- Gains et panoramiques passent par `setTargetAtTime` (environ 15 ms) pour
+  éviter les clics.
 
-## Rendu de la timeline
+## Interface
 
-- Le canvas a la taille de la **zone visible** et non du projet. Les canvas
-  sont limités à environ 32 000 px, et un projet de 10 minutes affiché à
-  400 px/s en ferait 240 000. Un « spacer » donne la largeur scrollable, et le
-  dessin tient compte de `scrollLeft`.
-- Les formes d'onde sont dessinées dans un canvas hors-écran, invalidé sur
-  scroll, zoom, redimensionnement ou modification des pistes. À chaque image,
-  on recopie cette couche puis on dessine seulement la tête de lecture.
-- La densité de pixels (`devicePixelRatio`) est gérée pour les écrans Retina
-  et HiDPI.
+- **Identité visuelle** : fond graphite bleuté, accent « citron électrique »
+  (`#d7ff4f`), dégradé citron → turquoise du logo (une boucle ouverte qui se
+  termine en triangle de lecture). Toutes les couleurs sont des variables CSS
+  dans `styles.css`.
+- **Barre de transport** : retour au début, stop, lecture/pause, horloge
+  (position / durée), VU-mètre stéréo du master avec maintien de crête, zoom,
+  import, ouverture du panneau d'effets.
+- **Panneau de pistes** : par piste, mute, solo, fader en dB (double-clic pour
+  revenir à 0 dB), potentiomètre de panoramique accessible (glisser, molette,
+  flèches, double-clic pour centrer), bouton FX et suppression. Cliquer sur une
+  piste la sélectionne.
+- **Timeline** : un canvas de la taille de la zone visible (un « spacer » donne
+  la largeur scrollable) et une couche hors-écran pour les formes d'onde. La
+  piste sélectionnée est mise en surbrillance, les pistes inaudibles sont
+  atténuées, et le nom du preset s'affiche sur le clip.
+- **Panneau d'effets** : contrôles générés depuis les descripteurs de
+  paramètres (`ui/controls.js`), curseurs logarithmiques pour les fréquences et
+  les temps.
 
 ## Tests
 
-`npm test` lance `node:test` sur la logique pure : planification, dB → gain,
-pics, formatage du temps. Les modules liés à Web Audio et au DOM restent fins
-pour que l'essentiel de la logique soit testable sans navigateur.
+`npm test` lance `node:test` (66 tests) sur toute la logique pure :
+
+- transport et mixage ;
+- théorie musicale, détection de hauteur, correction, PSOLA et rendu vocal
+  complet, mesurés sur des signaux synthétiques ;
+- courbes d'effets et schéma des réglages ;
+- les 24 presets : catégories, ordre, valeurs non corrigées par la validation ;
+- `PresetStore` : création, modification, suppression, persistance.
+
+Les modules Web Audio et DOM restent fins. Ils ont été vérifiés de bout en bout
+dans Chromium et dans Electron (Playwright).
 
 ## Évolutions prévues
 
-| Étape | Sujet                          | Piste technique                                                                                 |
-| ----- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
-| 1     | Déplacer et découper les clips | Modèle `Clip` séparé de `Track` (plusieurs clips par piste), `start(when, offset, duration)`    |
-| 2     | Pan, solo, VU-mètres           | `StereoPannerNode`, `AnalyserNode`                                                              |
-| 3     | Sauvegarde de projet           | JSON du projet et fichiers audio dans un dossier `.bandloop`, via IPC `fs`                      |
-| 4     | Enregistrement micro           | `getUserMedia` + AudioWorklet d'enregistrement, compensation de latence                         |
-| 5     | Effets                         | Nœuds natifs (EQ `BiquadFilterNode`, compresseur, réverbe `ConvolverNode`) puis AudioWorklet    |
-| 6     | Export / mixdown               | `OfflineAudioContext` → WAV                                                                     |
-| 7     | Gros projets                   | Décodage et calcul des pics dans un Worker ; streaming disque si la mémoire devient un problème |
-| 8     | Moteur temps réel maison       | Mixage dans un AudioWorklet (JS puis C++/Rust → WASM), comme les DAW web évolués                |
+| Étape | Sujet                          | Piste technique                                                                       |
+| ----- | ------------------------------ | ------------------------------------------------------------------------------------- |
+| 1     | Déplacer et découper les clips | Modèle `Clip` séparé de `Track`, `start(when, offset, duration)`                      |
+| 2     | Sauvegarde de projet           | JSON (pistes, réglages vocaux, tonalité) + fichiers audio dans un dossier `.bandloop` |
+| 3     | Enregistrement micro           | `getUserMedia` + AudioWorklet d'enregistrement, compensation de latence               |
+| 4     | Correction en direct           | YIN + PSOLA dans un AudioWorklet (les briques `dsp/` sont déjà sans DOM)              |
+| 5     | Export / mixdown               | `OfflineAudioContext` → WAV                                                           |
+| 6     | Import / export de presets     | Fichier `.blpreset` (JSON validé par `normalizeSettings`)                             |

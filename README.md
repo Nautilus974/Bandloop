@@ -1,27 +1,48 @@
 # Bandloop
 
-Studio audio multipiste de bureau, façon BandLab, pour macOS et Windows.
-Construit avec **Electron** et la **Web Audio API**.
+Studio audio multipiste de bureau pour macOS et Windows, avec un moteur d'effets
+vocaux et des presets. Construit avec **Electron** et la **Web Audio API**.
 
-> Statut : prototype. Import de pistes, timeline avec formes d'onde, lecture
-> synchronisée, play / pause / stop, déplacement de la tête de lecture, volume et mute par piste.
+![Bandloop](docs/screenshots/partie3-presets.png)
+
+## Fonctionnalités
+
+- **Multipiste** : import (dialogue ou glisser-déposer), timeline avec formes
+  d'onde et zoom, lecture synchronisée à l'échantillon, play / pause / stop,
+  déplacement de la tête de lecture.
+- **Console** : volume en dB, panoramique, mute et solo par piste, VU-mètre
+  stéréo et limiteur sur le master.
+- **Moteur vocal** :
+  - correction de hauteur, de l'instantané (robot) au lent (naturel), calée sur
+    la tonalité et la gamme du morceau ;
+  - transposition et formants ;
+  - jusqu'à 4 harmonies dans la gamme ;
+  - vocodeur et bourdon ;
+  - chaîne d'effets temps réel : téléphone, chœur, delay, réverb, distorsion,
+    bitcrush, modulation en anneau, compresseur, égaliseur.
+- **Presets** : 24 presets fournis en 5 catégories, plus tes propres presets à
+  créer, modifier, renommer, supprimer, enregistrés sur disque.
 
 ## Démarrer
 
 ```bash
 npm install
-npm run samples   # génère 3 pistes de démo dans ./samples (batterie, basse, nappe)
-npm start         # lance l'application
+npm run samples   # génère des pistes de démo dans ./samples, dont une voix de synthèse
+npm start
 ```
 
-Importe les fichiers de `samples/` avec **Importer des pistes…**, ou glisse-les dans la fenêtre.
+Importe `samples/voix.wav`, clique sur **FX** sur la piste, puis essaie les
+presets. Pour la correction et les harmonies, règle d'abord la **tonalité du
+morceau** (ici La mineur, c'est-à-dire `La` + `Mineur naturel`).
 
-| Raccourci                 | Action                                         |
-| ------------------------- | ---------------------------------------------- |
-| Espace                    | Lecture / pause                                |
-| Entrée / Début            | Stop (retour au début)                         |
-| Clic sur la timeline      | Déplacer la tête de lecture (glisser possible) |
-| Double-clic sur un volume | Retour à 0 dB                                  |
+| Raccourci                       | Action                                    |
+| ------------------------------- | ----------------------------------------- |
+| Espace                          | Lecture / pause                           |
+| Entrée                          | Stop (retour au début)                    |
+| Début                           | Retour au début sans arrêter              |
+| Clic sur la timeline            | Sélectionner la piste et déplacer la tête |
+| Double-clic sur un curseur      | Valeur par défaut                         |
+| Glisser vertical sur le pan (⇧) | Réglage (fin avec ⇧)                      |
 
 ## Scripts
 
@@ -33,4 +54,9 @@ Importe les fichiers de `samples/` avec **Importer des pistes…**, ou glisse-le
 | `npm run dist:mac` | Construit un `.dmg` (à lancer sur un Mac)    |
 | `npm run dist:win` | Construit un installeur `.exe` (NSIS)        |
 
-L'architecture est décrite dans [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+## Documentation
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) : processus Electron, graphe
+  audio, transport, interface.
+- [docs/MOTEUR-VOCAL.md](docs/MOTEUR-VOCAL.md) : briques audio de chaque effet,
+  algorithmes, presets, **limites de qualité**.

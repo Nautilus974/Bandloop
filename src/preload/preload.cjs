@@ -6,4 +6,10 @@ contextBridge.exposeInMainWorld('bandloop', {
   platform: process.platform,
   /** @returns {Promise<Array<{name: string, data: Uint8Array}>>} */
   openAudioFiles: () => ipcRenderer.invoke('audio:open-files'),
+  presets: {
+    /** @returns {Promise<object[]>} presets utilisateur enregistrés */
+    load: () => ipcRenderer.invoke('presets:load'),
+    /** @param {object[]} presets */
+    save: (presets) => ipcRenderer.invoke('presets:save', presets),
+  },
 });

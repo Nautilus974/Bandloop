@@ -27,7 +27,7 @@ export class Timeline {
   /**
    * @param {HTMLElement} scroller  Conteneur scrollable horizontalement
    * @param {import('../audio/AudioEngine.js').AudioEngine} engine
-   * @param {{ getSelectedId: () => number|null, select: (id: number) => void }} ui
+   * @param {{ getSelectedId: () => number|null, select: (id: number) => void, fxLabel?: (id: number) => string|null }} ui
    */
   constructor(scroller, engine, ui) {
     this.scroller = scroller;
@@ -196,6 +196,20 @@ export class Timeline {
     g.font = '600 11px "Inter Variable", system-ui, sans-serif';
     g.textBaseline = 'middle';
     g.fillText(track.name, Math.max(clipX, 0) + 8, top + CLIP_HEADER / 2 + 0.5);
+
+    // Pastille du preset / des effets, collée au bord droit visible du clip.
+    const fx = this.ui.fxLabel?.(track.id);
+    if (fx) {
+      g.font = '650 10px "Inter Variable", system-ui, sans-serif';
+      const w = g.measureText(fx).width + 12;
+      const right = Math.min(clipX + clipW, viewWidth) - 6;
+      g.fillStyle = track.color;
+      g.beginPath();
+      g.roundRect(right - w, top + 3, w, CLIP_HEADER - 6, 6);
+      g.fill();
+      g.fillStyle = '#0a0c0f';
+      g.fillText(fx, right - w + 6, top + CLIP_HEADER / 2 + 0.5);
+    }
 
     // Forme d'onde : pour chaque colonne de pixels, min/max des pics correspondants.
     const waveTop = top + CLIP_HEADER;

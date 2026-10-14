@@ -1,5 +1,7 @@
 // Point d'entrée du renderer : relie le moteur audio, la timeline et les panneaux.
 import { AudioEngine } from './audio/AudioEngine.js';
+import { PresetStore } from './presets/PresetStore.js';
+import { createPresetStorage } from './presets/storage.js';
 import { svg } from './ui/dom.js';
 import { FxPanel } from './ui/FxPanel.js';
 import { icons, logo } from './ui/icons.js';
@@ -7,6 +9,7 @@ import { Meter } from './ui/Meter.js';
 import { Timeline } from './ui/Timeline.js';
 import { formatTime } from './ui/time.js';
 import { TrackPanel } from './ui/TrackPanel.js';
+import { VocalHub } from './vocal/VocalHub.js';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -16,6 +19,10 @@ $('#logo').append(svg(logo));
 $('#empty-logo').append(svg(logo));
 
 const engine = new AudioEngine();
+// Créé avant les écouteurs de l'interface : il prépare l'état vocal de chaque
+// nouvelle piste avant que les panneaux ne se redessinent.
+const hub = new VocalHub(engine);
+const presets = new PresetStore(createPresetStorage());
 
 // --- État d'interface -------------------------------------------------------
 
@@ -34,13 +41,20 @@ const ui = {
     ui.select(id);
     setFxOpen(true);
   },
-  hasFx: () => false,
+  hasFx: (id) => hub.hasFx(id),
+  /** Libellé affiché sur le clip : nom du preset, « FX » ou rien. */
+  fxLabel(id) {
+    if (!hub.hasFx(id)) return null;
+    const state = hub.getState(id);
+    return (state.presetId && presets.get(state.presetId)?.name) || 'FX';
+  },
   onClose: () => setFxOpen(false),
+  notify: (message, isError) => setStatus(message, isError),
 };
 
 const timeline = new Timeline($('#timeline'), engine, ui);
 const trackPanel = new TrackPanel($('#track-panel'), engine, ui);
-const fxPanel = new FxPanel($('#fx-panel'), engine, ui);
+const fxPanel = new FxPanel($('#fx-panel'), engine, hub, presets, ui);
 const meter = new Meter($('#meter'));
 
 const playBtn = $('#btn-play');
@@ -48,7 +62,7 @@ const timeDisplay = $('#time-display');
 const statusEl = $('#status');
 
 // Exposé pour le débogage dans la console DevTools.
-window.engine = engine;
+Object.assign(window, { engine, hub, presets });
 
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
@@ -193,6 +207,24 @@ engine.addEventListener('mix', () => {
   timeline.invalidate();
 });
 
+hub.addEventListener('change', () => {
+  trackPanel.refresh();
+  timeline.invalidate();
+});
+
+const RENDER_MESSAGES = {
+  analyzing: 'Analyse de la hauteur de « %s »…',
+  rendering: 'Calcul des effets vocaux de « %s »…',
+  ready: 'Effets vocaux de « %s » à jour.',
+};
+hub.addEventListener('status', ({ detail }) => {
+  const state = hub.getState(detail.trackId);
+  const track = engine.getTrack(detail.trackId);
+  if (!state || !track) return;
+  if (state.status === 'error') setStatus(`Échec du calcul des effets de « ${track.name} » : ${state.error}`, true);
+  else if (RENDER_MESSAGES[state.status]) setStatus(RENDER_MESSAGES[state.status].replace('%s', track.name));
+});
+
 // --- Boucle d'affichage -----------------------------------------------------
 
 function frame() {
@@ -209,3 +241,4 @@ function frame() {
 trackPanel.render();
 updateInfo();
 requestAnimationFrame(frame);
+presets.load();

@@ -18,11 +18,19 @@ export class AudioEngine extends EventTarget {
     super();
     this.ctx = ctx;
     this.master = ctx.createGain();
-    this.master.connect(ctx.destination);
+    // Limiteur de sécurité : harmonies et effets peuvent dépasser 0 dBFS.
+    this.limiter = ctx.createDynamicsCompressor();
+    this.limiter.threshold.value = -1;
+    this.limiter.knee.value = 0;
+    this.limiter.ratio.value = 20;
+    this.limiter.attack.value = 0.002;
+    this.limiter.release.value = 0.12;
+    this.master.connect(this.limiter);
+    this.limiter.connect(ctx.destination);
     // Analyse du bus master pour le VU-mètre (un analyseur par canal).
     this.meterSplitter = ctx.createChannelSplitter(2);
     this.meters = [ctx.createAnalyser(), ctx.createAnalyser()];
-    this.master.connect(this.meterSplitter);
+    this.limiter.connect(this.meterSplitter);
     this.meters.forEach((analyser, i) => {
       analyser.fftSize = 1024;
       this.meterSplitter.connect(analyser, i);

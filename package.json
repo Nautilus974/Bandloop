@@ -6,7 +6,7 @@
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
-    "test": "node --test \"test/**/*.test.js\"",
+    "test": "node --test \"test/*.test.js\"",
     "samples": "node scripts/generate-samples.js",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win"
