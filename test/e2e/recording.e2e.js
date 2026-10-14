@@ -31,11 +31,13 @@ before(async () => {
     ],
   });
   win = await app.firstWindow();
-  await win.waitForSelector('.topbar');
+  await win.waitForFunction(() => window.project && window.engine); // application prête
 });
 
 after(async () => {
-  await app?.close();
+  // Fermeture forcée : sinon la confirmation « Enregistrer les modifications ? » attendrait une réponse.
+  await app?.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {});
+  await app?.close().catch(() => {});
 });
 
 test('calage : les clics de la prise tombent sur ceux de la piste guide (boucle virtuelle de 120 ms)', async () => {

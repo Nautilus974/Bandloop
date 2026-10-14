@@ -77,3 +77,60 @@ export async function confirmDialog({ title, message, confirm = 'Confirmer', dan
   );
   return result === true;
 }
+
+/**
+ * Modifications non enregistrées : « Enregistrer », « Ne pas enregistrer », « Annuler ».
+ * @returns {Promise<'save'|'discard'|'cancel'>}
+ */
+export function unsavedDialog(projectName) {
+  return new Promise((resolve) => {
+    const dialog = h('dialog', { className: 'dialog' });
+    const choose = (value) => {
+      dialog.returnValue = value;
+      dialog.close();
+    };
+    dialog.append(
+      h('h2', { className: 'dialog-title' }, `Enregistrer les modifications de « ${projectName} » ?`),
+      h('p', { className: 'dialog-message' }, 'Si tu continues sans enregistrer, les modifications seront perdues.'),
+      h(
+        'div',
+        { className: 'dialog-actions' },
+        h('button', { type: 'button', className: 'btn btn-ghost', onclick: () => choose('cancel') }, 'Annuler'),
+        h('button', { type: 'button', className: 'btn', onclick: () => choose('discard') }, 'Ne pas enregistrer'),
+        h('button', { type: 'button', className: 'btn btn-primary', onclick: () => choose('save') }, 'Enregistrer'),
+      ),
+    );
+    dialog.addEventListener('close', () => {
+      dialog.remove();
+      resolve(['save', 'discard'].includes(dialog.returnValue) ? dialog.returnValue : 'cancel');
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+    dialog.querySelector('.btn-primary').focus();
+  });
+}
+
+/** Message d'erreur (ou d'information) avec un seul bouton. */
+export function alertDialog(title, text) {
+  return new Promise((resolve) => {
+    const dialog = h('dialog', { className: 'dialog', role: 'alertdialog' });
+    dialog.append(
+      h('h2', { className: 'dialog-title' }, title),
+      ...String(text)
+        .split('\n')
+        .map((line) => h('p', { className: 'dialog-message' }, line)),
+      h(
+        'div',
+        { className: 'dialog-actions' },
+        h('button', { type: 'button', className: 'btn btn-primary', onclick: () => dialog.close() }, 'OK'),
+      ),
+    );
+    dialog.addEventListener('close', () => {
+      dialog.remove();
+      resolve();
+    });
+    document.body.append(dialog);
+    dialog.showModal();
+    dialog.querySelector('.btn-primary').focus();
+  });
+}

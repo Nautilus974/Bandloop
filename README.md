@@ -18,6 +18,12 @@ vocaux et des presets. Construit avec **Electron** et la **Web Audio API**.
   temps (aimanté sur 0, la tête de lecture, les autres clips et la grille ;
   Maj pour un placement libre), en haut ou en bas pour changer la piste de
   place ; poignée ⠿ sur chaque piste ; bouton « + » sous la dernière piste.
+- **Projets** : fichier `.bandloop` autonome (tout l'audio embarqué : fichiers
+  importés tels quels, prises micro en FLAC sans perte), Nouveau / Ouvrir /
+  Enregistrer / Enregistrer sous, titre avec `*` si modifié, confirmation
+  avant de perdre des modifications.
+- **Export du mix** en WAV (24/16 bits) ou MP3 (128–320 kb/s), effets et
+  presets compris, avec progression et limiteur à −1 dBFS.
 - **Console** : volume en dB, panoramique, mute et solo par piste, VU-mètre
   stéréo et limiteur sur le master.
 - **Moteur vocal** :
@@ -54,19 +60,21 @@ morceau** (ici La mineur, c'est-à-dire `La` + `Mineur naturel`).
 
 ## Scripts
 
-| Commande           | Rôle                                                                                                                                        |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm start`        | Lance l'app en développement                                                                                                                |
-| `npm test`         | Tests unitaires (`node:test`, sans Electron)                                                                                                |
-| `npm run test:e2e` | Tests de bout en bout dans l'app Electron (enregistrement, déplacement des pistes) ; sous Linux sans écran : `xvfb-run -a npm run test:e2e` |
-| `npm run samples`  | Génère des WAV de démo                                                                                                                      |
-| `npm run dist:mac` | Construit un `.dmg` (à lancer sur un Mac)                                                                                                   |
-| `npm run dist:win` | Construit un installeur `.exe` (NSIS)                                                                                                       |
+| Commande           | Rôle                                                                                                                                              |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm start`        | Lance l'app en développement                                                                                                                      |
+| `npm test`         | Tests unitaires (`node:test`, sans Electron)                                                                                                      |
+| `npm run test:e2e` | Tests de bout en bout dans l'app Electron (enregistrement, déplacement, projets, export) ; sous Linux sans écran : `xvfb-run -a npm run test:e2e` |
+| `npm run samples`  | Génère des WAV de démo                                                                                                                            |
+| `npm run dist:mac` | Construit un `.dmg` (à lancer sur un Mac)                                                                                                         |
+| `npm run dist:win` | Construit un installeur `.exe` (NSIS)                                                                                                             |
 
 ## Documentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) : processus Electron, graphe
   audio, transport, interface.
+- [docs/PROJETS-ET-EXPORT.md](docs/PROJETS-ET-EXPORT.md) : format `.bandloop`,
+  choix des formats audio, export, **limites** (taille, durées, qualité MP3).
 - [docs/ENREGISTREMENT.md](docs/ENREGISTREMENT.md) : enregistrement au micro,
   calage et latence, **limites** (latence, qualité du micro, monitoring sans
   écho).

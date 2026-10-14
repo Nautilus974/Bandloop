@@ -174,6 +174,12 @@ kbd {
   color: var(--accent);
 }
 
+.btn-icon {
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
 .btn-small {
   height: 28px;
   padding: 0 10px;
@@ -243,8 +249,9 @@ kbd {
 }
 
 .project-name {
-  min-width: 0;
-  max-width: 220px;
+  flex: 1 1 auto;
+  min-width: 90px;
+  max-width: 240px;
   padding: 5px 8px;
   border: 1px solid transparent;
   border-radius: var(--radius-s);
@@ -1480,12 +1487,12 @@ body.dragging .workspace {
 }
 
 .dialog::backdrop {
-  background: rgb(5 6 8 / 65%);
-  backdrop-filter: blur(2px);
+  background: rgb(5 6 8 / 72%);
 }
 
 .dialog-title {
   margin: 0 0 14px;
+  text-wrap: balance;
   font-size: 16px;
   font-weight: 700;
 }
@@ -2016,6 +2023,251 @@ body.reordering * {
 .menu-hint {
   font-size: 11.5px;
   color: var(--text-3);
+}
+
+/* ---------- Fichier, tempo, export ---------- */
+
+.btn-file {
+  height: 30px;
+  padding: 0 10px;
+  color: var(--text-2);
+}
+
+.btn-file[aria-expanded='true'] {
+  background: var(--bg-4);
+  color: var(--text);
+}
+
+.tempo {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 38px;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: var(--bg-0);
+  cursor: text;
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.tempo input {
+  width: 34px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: 500 13px var(--font-mono);
+  text-align: right;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.tempo input::-webkit-inner-spin-button,
+.tempo input::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.tempo:focus-within {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.tempo input:focus {
+  outline: none;
+}
+
+.menu-icon.empty {
+  background: transparent;
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 5px 6px;
+  background: var(--line-2);
+}
+
+.menu-shortcut {
+  margin-left: auto;
+  padding-left: 16px;
+  border: none;
+  color: var(--text-3);
+  font: 500 11px var(--font-mono);
+}
+
+.menu-item:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.menu-item:disabled:hover {
+  background: transparent;
+}
+
+/* Indicateur d'activité (enregistrement / ouverture de projet) */
+.busy {
+  position: fixed;
+  left: 50%;
+  bottom: 44px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  transform: translateX(-50%);
+  border: 1px solid var(--line-3);
+  border-radius: 20px;
+  background: var(--bg-3);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 45%);
+  font-weight: 550;
+}
+
+.busy[hidden] {
+  display: none;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--line-3);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Boîte d'export */
+.export-dialog {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.export-dialog > * + * {
+  margin-top: 14px;
+}
+
+.export-dialog .dialog-title {
+  margin-bottom: 4px;
+}
+
+.format-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.format-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-m);
+  background: var(--bg-2);
+  text-align: left;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.format-card:hover {
+  border-color: var(--line-3);
+}
+
+.format-card[aria-checked='true'] {
+  border-color: var(--accent);
+  background: linear-gradient(160deg, rgb(215 255 79 / 12%), rgb(47 212 181 / 5%));
+}
+
+.format-badge {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--bg-4);
+  font: 600 10.5px var(--font-mono);
+  letter-spacing: 0.06em;
+}
+
+.format-card[aria-checked='true'] .format-badge {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.format-title {
+  margin-top: 6px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.format-sub {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-2);
+}
+
+.format-detail {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.export-estimate {
+  margin: 0;
+}
+
+.export-phase {
+  margin: 0;
+  color: var(--text-2);
+}
+
+.progress {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--bg-1);
+  box-shadow: inset 0 0 0 1px var(--line-2);
+}
+
+.progress-fill {
+  height: 100%;
+  transform: scaleX(0);
+  transform-origin: left;
+  background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  transition: transform 0.2s var(--ease);
+}
+
+.progress-percent {
+  display: block;
+  margin-top: 6px !important;
+  font: 500 12px var(--font-mono);
+  color: var(--text-3);
+  text-align: right;
+}
+
+.export-done-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.export-done-icon .icon {
+  width: 22px;
+  height: 22px;
+}
+
+.export-file {
+  font: 500 13px var(--font-mono);
+  color: var(--text) !important;
+  word-break: break-all;
 }
 
 /* ---------- Barre d'état ---------- */

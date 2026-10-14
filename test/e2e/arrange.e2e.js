@@ -49,7 +49,7 @@ before(async () => {
   });
   win = await app.firstWindow();
   await win.setViewportSize({ width: 1440, height: 860 });
-  await win.waitForSelector('.topbar');
+  await win.waitForFunction(() => window.project && window.engine); // application prête
   // Trois pistes de 4 s (sinus), noms A, B, C.
   await win.evaluate(() => {
     const sr = engine.ctx.sampleRate;
@@ -66,7 +66,11 @@ before(async () => {
   });
 });
 
-after(async () => app?.close());
+after(async () => {
+  // Fermeture forcée : sinon la confirmation « Enregistrer les modifications ? » attendrait une réponse.
+  await app?.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().forEach((w) => w.destroy())).catch(() => {});
+  await app?.close().catch(() => {});
+});
 
 test('glisser un clip vers la droite : aimanté sur la grille (2 s)', async () => {
   await drag(await clipPoint('B'), 103, 0); // ≈ 2,06 s -> aimanté à 2 s

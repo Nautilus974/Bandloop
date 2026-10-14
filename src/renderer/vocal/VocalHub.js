@@ -68,6 +68,20 @@ export class VocalHub extends EventTarget {
     }
   }
 
+  /** Résolue quand aucun rendu vocal n'est en attente ou en cours (avant un export). */
+  whenIdle() {
+    const busy = () => [...this.states.values()].some((s) => ['pending', 'analyzing', 'rendering'].includes(s.status));
+    if (!busy()) return Promise.resolve();
+    return new Promise((resolve) => {
+      const check = () => {
+        if (busy()) return;
+        this.removeEventListener('status', check);
+        resolve();
+      };
+      this.addEventListener('status', check);
+    });
+  }
+
   getState(trackId) {
     return this.states.get(trackId) ?? null;
   }

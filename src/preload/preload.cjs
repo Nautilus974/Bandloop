@@ -12,6 +12,25 @@ contextBridge.exposeInMainWorld('bandloop', {
     /** Ouvre la page de confidentialité du micro dans les réglages du système. */
     openSettings: () => ipcRenderer.invoke('mic:open-settings'),
   },
+  project: {
+    /** @returns {Promise<null | {path: string, bytes: Uint8Array} | {error: {code: string, message: string}}>} */
+    openDialog: () => ipcRenderer.invoke('project:open-dialog'),
+    /** Lit un projet transmis par le système (double-clic). */
+    read: (path) => ipcRenderer.invoke('project:read', path),
+  },
+  files: {
+    /** @param {{ kind: 'project'|'wav'|'mp3', suggestedName: string }} opts @returns {Promise<string|null>} */
+    chooseSavePath: (opts) => ipcRenderer.invoke('file:choose-save-path', opts),
+    /** Écriture atomique. @returns {Promise<{ok: true, path: string, size: number} | {error: {code: string, message: string}}>} */
+    write: (path, bytes, action) => ipcRenderer.invoke('file:write', { path, bytes, action }),
+    showInFolder: (path) => ipcRenderer.invoke('file:show-in-folder', path),
+  },
+  window: {
+    setDocument: (doc) => ipcRenderer.send('window:set-document', doc),
+    closeNow: () => ipcRenderer.send('window:close-now'),
+  },
+  /** Commandes du menu de l'application (nouveau, ouvrir, enregistrer…). */
+  onMenu: (callback) => ipcRenderer.on('menu', (_event, payload) => callback(payload)),
   presets: {
     /** @returns {Promise<object[]>} presets utilisateur enregistrés */
     load: () => ipcRenderer.invoke('presets:load'),

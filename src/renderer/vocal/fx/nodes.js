@@ -7,18 +7,23 @@ const SMOOTH = 0.02;
 const ramp = (param, value, ctx) => param.setTargetAtTime(value, ctx.currentTime, SMOOTH);
 const dbToGain = (db) => Math.pow(10, db / 20);
 
-let workletsReady = null;
+const workletsByContext = new WeakMap();
 
-/** Charge les AudioWorklets (une fois par contexte). */
+/** Charge les AudioWorklets (une fois par contexte : temps réel ou rendu d'export). */
 export function loadWorklets(ctx) {
-  workletsReady ??= ctx.audioWorklet
-    .addModule(new URL('../worklets/bitcrusher.worklet.js', import.meta.url))
-    .then(() => true)
-    .catch((err) => {
-      console.warn('AudioWorklet indisponible : bitcrush réduit à la quantification.', err);
-      return false;
-    });
-  return workletsReady;
+  if (!workletsByContext.has(ctx)) {
+    workletsByContext.set(
+      ctx,
+      ctx.audioWorklet
+        .addModule(new URL('../worklets/bitcrusher.worklet.js', import.meta.url))
+        .then(() => true)
+        .catch((err) => {
+          console.warn('AudioWorklet indisponible : bitcrush réduit à la quantification.', err);
+          return false;
+        }),
+    );
+  }
+  return workletsByContext.get(ctx);
 }
 let workletAvailable = false;
 export const markWorkletAvailable = (v) => (workletAvailable = v);
@@ -195,18 +200,18 @@ const FACTORIES = {
         const key = `${p.decay}|${p.brightness}`;
         if (key === irKey) return;
         irKey = key;
-        // Recalcul de la réponse impulsionnelle différé (coûteux pendant un glisser).
+        const build = () => {
+          const [l, r] = generateImpulse(ctx.sampleRate, { decay: p.decay, brightness: p.brightness, seed: 11 });
+          const buffer = ctx.createBuffer(2, l.length, ctx.sampleRate);
+          buffer.copyToChannel(l, 0);
+          buffer.copyToChannel(r, 1);
+          convolver.buffer = buffer;
+        };
         clearTimeout(timer);
-        timer = setTimeout(
-          () => {
-            const [l, r] = generateImpulse(ctx.sampleRate, { decay: p.decay, brightness: p.brightness, seed: 11 });
-            const buffer = ctx.createBuffer(2, l.length, ctx.sampleRate);
-            buffer.copyToChannel(l, 0);
-            buffer.copyToChannel(r, 1);
-            convolver.buffer = buffer;
-          },
-          convolver.buffer ? 120 : 0,
-        );
+        // Premier réglage : immédiat (indispensable pour le rendu d'export) ;
+        // ensuite différé, car coûteux pendant qu'on tourne un bouton.
+        if (!convolver.buffer) build();
+        else timer = setTimeout(build, 120);
       },
       dispose() {
         clearTimeout(timer);

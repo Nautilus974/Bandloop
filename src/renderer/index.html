@@ -15,6 +15,7 @@
         <span id="logo" class="logo"></span>
         <span class="wordmark">bandloop</span>
         <span class="brand-sep" aria-hidden="true"></span>
+        <button id="btn-file" class="btn btn-ghost btn-file" aria-haspopup="menu" aria-expanded="false">Fichier</button>
         <input
           id="project-name"
           class="project-name"
@@ -57,6 +58,10 @@
           <output id="time-display" class="clock-time">0:00.000</output>
           <span id="time-total" class="clock-total">/ 0:00.000</span>
         </div>
+        <label class="tempo" title="Tempo du morceau (enregistré avec le projet)">
+          <input id="tempo" type="number" min="20" max="300" step="1" value="120" aria-label="Tempo en BPM" />
+          <span>BPM</span>
+        </label>
         <div id="meter" class="meter" title="Niveau de sortie"></div>
       </div>
 
@@ -66,19 +71,36 @@
           <input id="zoom" type="range" min="10" max="400" value="50" aria-label="Zoom" />
           <button id="zoom-in" class="icon-btn" data-icon="plus" title="Zoomer" aria-label="Zoomer"></button>
         </div>
-        <button id="btn-import" class="btn btn-primary" data-icon="import">Importer</button>
+        <button
+          id="btn-import"
+          class="btn btn-icon"
+          data-icon="import"
+          title="Importer des fichiers audio"
+          aria-label="Importer des fichiers audio"
+        ></button>
         <button
           id="btn-fx-toggle"
-          class="btn btn-ghost"
+          class="btn btn-icon btn-ghost"
           data-icon="sliders"
           aria-pressed="false"
           title="Panneau d'effets vocaux"
+          aria-label="Panneau d'effets vocaux"
+        ></button>
+        <button
+          id="btn-export"
+          class="btn btn-primary"
+          data-icon="export"
+          title="Exporter le mix en WAV ou MP3 (Ctrl/Cmd+E)"
         >
-          Effets
+          Exporter
         </button>
         <input id="file-input" type="file" accept="audio/*" multiple hidden />
       </div>
     </header>
+
+    <div id="busy" class="busy" role="status" aria-live="polite" hidden>
+      <span class="spinner" aria-hidden="true"></span><span id="busy-text"></span>
+    </div>
 
     <div id="record-panel" class="record-panel" role="dialog" aria-label="Enregistrement" hidden></div>
 

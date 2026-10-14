@@ -20,6 +20,15 @@ export const icons = {
   toStart: icon(
     '<path d="M5 4.5v11"/><path d="M15 5.2v9.6a.6.6 0 0 1-.95.5L8 10.5a.6.6 0 0 1 0-1l6.05-4.8a.6.6 0 0 1 .95.5z" fill="currentColor"/>',
   ),
+  export: icon(
+    '<path d="M10 13V3.5M6.5 7L10 3.5 13.5 7"/><path d="M4 12.5V15a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 16 15v-2.5"/>',
+  ),
+  file: icon(
+    '<path d="M5.5 3h6l3.5 3.5V16a1 1 0 0 1-1 1h-8.5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M11.5 3v3.5H15"/>',
+  ),
+  folder: icon(
+    '<path d="M3 6a1.5 1.5 0 0 1 1.5-1.5H8l1.5 2h6A1.5 1.5 0 0 1 17 8v6.5a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14.5z"/>',
+  ),
   plus: icon('<path d="M10 4.5v11M4.5 10h11"/>'),
   minus: icon('<path d="M4.5 10h11"/>'),
   close: icon('<path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/>'),

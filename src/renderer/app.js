@@ -1,10 +1,17 @@
 // Point d'entrée du renderer : relie le moteur audio, la timeline et les panneaux.
 import { AudioEngine } from './audio/AudioEngine.js';
+import { ExportManager } from './export/ExportManager.js';
+import { ExportError } from './export/mixdown.js';
+import { PROJECT_EXTENSION } from './project/format.js';
+import { ProjectManager } from './project/ProjectManager.js';
 import { PresetStore } from './presets/PresetStore.js';
 import { createPresetStorage } from './presets/storage.js';
 import { Recorder } from './record/Recorder.js';
 import { svg } from './ui/dom.js';
 import { AddTrackMenu } from './ui/AddTrackMenu.js';
+import { alertDialog, unsavedDialog } from './ui/Dialog.js';
+import { ExportDialog } from './ui/ExportDialog.js';
+import { PopupMenu } from './ui/PopupMenu.js';
 import { FxPanel } from './ui/FxPanel.js';
 import { icons, logo } from './ui/icons.js';
 import { Meter } from './ui/Meter.js';
@@ -170,7 +177,11 @@ window.addEventListener('drop', async (e) => {
   e.preventDefault();
   dragDepth = 0;
   document.body.classList.remove('dragging');
-  await importFiles(await readBrowserFiles(e.dataTransfer.files));
+  const files = [...e.dataTransfer.files];
+  const projectFile = files.find((f) => f.name.toLowerCase().endsWith(`.${PROJECT_EXTENSION}`));
+  // Un projet .bandloop lâché sur la fenêtre est ouvert ; les fichiers audio sont importés.
+  if (projectFile) await project.openBytes(new Uint8Array(await projectFile.arrayBuffer()), null);
+  else await importFiles(await readBrowserFiles(files));
 });
 
 // --- Transport --------------------------------------------------------------
@@ -212,6 +223,15 @@ const isTextField = (el) =>
   el?.isContentEditable;
 
 window.addEventListener('keydown', (e) => {
+  // Hors Electron (navigateur), les raccourcis de fichier ne passent pas par le menu natif.
+  if (!bridge && (e.ctrlKey || e.metaKey) && !e.altKey) {
+    const command = { KeyS: e.shiftKey ? 'save-as' : 'save', KeyO: 'open', KeyN: 'new', KeyE: 'export' }[e.code];
+    if (command) {
+      e.preventDefault();
+      runCommand(command);
+      return;
+    }
+  }
   if (isTextField(e.target)) return;
   // Entrée active le bouton qui a le focus (accessibilité clavier) ; dans un menu ou
   // une boîte de dialogue, Entrée et Espace gardent leur rôle natif.
@@ -259,6 +279,176 @@ const setZoom = (value) => {
 zoom.addEventListener('input', () => setZoom(zoom.value));
 $('#zoom-in').addEventListener('click', () => setZoom(Number(zoom.value) * 1.4));
 $('#zoom-out').addEventListener('click', () => setZoom(Number(zoom.value) / 1.4));
+
+// --- Projet : nouveau, ouvrir, enregistrer ; export du mix --------------------
+
+/** Accès aux fichiers : Electron (dialogues natifs) ou navigateur (téléchargement / sélecteur). */
+const io = bridge?.files
+  ? {
+      chooseSavePath: (opts) => bridge.files.chooseSavePath(opts),
+      writeFile: (path, bytes, action) => bridge.files.write(path, bytes, action),
+      openProjectFile: () => bridge.project.openDialog(),
+      showInFolder: (path) => bridge.files.showInFolder(path),
+    }
+  : {
+      chooseSavePath: async ({ suggestedName }) => suggestedName,
+      async writeFile(path, bytes) {
+        const url = URL.createObjectURL(new Blob([bytes]));
+        Object.assign(document.createElement('a'), { href: url, download: path }).click();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        return { ok: true, path, size: bytes.byteLength };
+      },
+      openProjectFile: () =>
+        new Promise((resolve) => {
+          const input = Object.assign(document.createElement('input'), {
+            type: 'file',
+            accept: `.${PROJECT_EXTENSION}`,
+          });
+          input.onchange = async () => {
+            const file = input.files[0];
+            resolve(file ? { path: null, bytes: new Uint8Array(await file.arrayBuffer()) } : null);
+          };
+          input.click();
+        }),
+    };
+
+const tempoInput = $('#tempo');
+const projectNameInput = $('#project-name');
+const busy = (text) => {
+  $('#busy').hidden = !text;
+  $('#busy-text').textContent = text ?? '';
+};
+
+const project = new ProjectManager({
+  engine,
+  hub,
+  presets,
+  io,
+  view: {
+    getZoom: () => Number(zoom.value),
+    setZoom: (v) => setZoom(v),
+    getTempo: () => Number(tempoInput.value) || 120,
+    setTempo: (v) => (tempoInput.value = String(v)),
+    isBusy: () => recorder.busy,
+  },
+  ask: {
+    unsaved: (name) => unsavedDialog(name),
+    error: (title, text) => {
+      setStatus(`${title} : ${text}`, true);
+      alertDialog(title, text);
+    },
+    progress: busy,
+  },
+});
+window.project = project;
+
+function syncDocument() {
+  document.title = project.title;
+  if (document.activeElement !== projectNameInput) projectNameInput.value = project.name;
+  bridge?.window?.setDocument({ title: project.title, name: project.name, edited: project.dirty, path: project.path });
+}
+project.addEventListener('change', syncDocument);
+syncDocument();
+
+projectNameInput.addEventListener('change', () => project.setName(projectNameInput.value));
+projectNameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') projectNameInput.blur();
+});
+tempoInput.addEventListener('change', () => {
+  tempoInput.value = String(Math.min(300, Math.max(20, Math.round(Number(tempoInput.value) || 120))));
+  project.markDirty();
+});
+
+const exporter = new ExportManager({ engine, hub, io });
+const exportDialog = new ExportDialog({
+  duration: () => engine.duration,
+  sampleRate: engine.ctx.sampleRate,
+  projectName: () => project.name,
+  showInFolder: io.showInFolder,
+  async start(options) {
+    const path = await io.chooseSavePath({ kind: options.format, suggestedName: `${project.name}.${options.format}` });
+    if (!path) return null;
+    const signal = exportDialog.showProgress();
+    try {
+      const result = await exporter.run(options, path, { signal, onPhase: (text, f) => exportDialog.phase(text, f) });
+      exportDialog.showDone(result);
+      setStatus(`Mix exporté : ${String(result.path).split(/[\\/]/).pop()}`);
+      return result;
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        exportDialog.close();
+        setStatus('Export annulé.');
+      } else {
+        console.error(err);
+        exportDialog.showError(
+          'L’export a échoué',
+          err instanceof ExportError ? err.message : `Erreur inattendue : ${err.message}`,
+        );
+      }
+      return null;
+    }
+  },
+});
+
+function openExport() {
+  if (recorder.busy) return setStatus('Termine d’abord l’enregistrement en cours.', true);
+  if (!engine.tracks.length)
+    return alertDialog('Rien à exporter', 'Ajoute au moins une piste avant d’exporter le mix.');
+  exportDialog.open();
+}
+
+async function runCommand(command, payload = {}) {
+  switch (command) {
+    case 'new':
+      if (await project.newProject()) setStatus('Nouveau projet.');
+      break;
+    case 'open':
+      if (await project.open()) setStatus(`Projet « ${project.name} » ouvert.`);
+      break;
+    case 'open-path': {
+      if (!(await project.confirmDiscard())) break;
+      const file = await bridge.project.read(payload.path);
+      if (file?.error) alertDialog('Impossible d’ouvrir le projet', file.error.message);
+      else if (await project.openBytes(file.bytes, file.path, { confirmed: true }))
+        setStatus(`Projet « ${project.name} » ouvert.`);
+      break;
+    }
+    case 'save':
+    case 'save-as':
+      if (await project.save({ as: command === 'save-as' }))
+        setStatus(`Projet enregistré : ${String(project.path).split(/[\\/]/).pop()}`);
+      break;
+    case 'save-then-close':
+      // Fermeture de la fenêtre demandée avec « Enregistrer » : on ferme seulement si c'est fait.
+      if (await project.save()) bridge?.window?.closeNow();
+      break;
+    case 'export':
+      openExport();
+      break;
+  }
+}
+bridge?.onMenu?.(({ command, ...payload }) => runCommand(command, payload));
+
+const fileMenu = new PopupMenu('Fichier', () => {
+  const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+  return [
+    { icon: svg(icons.file), title: 'Nouveau projet', shortcut: `${mod}N`, run: () => runCommand('new') },
+    { icon: svg(icons.folder), title: 'Ouvrir…', shortcut: `${mod}O`, run: () => runCommand('open') },
+    'separator',
+    { icon: svg(icons.save), title: 'Enregistrer', shortcut: `${mod}S`, run: () => runCommand('save') },
+    { title: 'Enregistrer sous…', shortcut: `${mod}⇧S`, run: () => runCommand('save-as') },
+    'separator',
+    {
+      icon: svg(icons.export),
+      title: 'Exporter le mix…',
+      shortcut: `${mod}E`,
+      disabled: !engine.tracks.length,
+      run: () => runCommand('export'),
+    },
+  ];
+});
+$('#btn-file').addEventListener('click', (e) => fileMenu.toggle(e.currentTarget));
+$('#btn-export').addEventListener('click', openExport);
 
 // --- Réactions aux changements du moteur ------------------------------------
 

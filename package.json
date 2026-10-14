@@ -40,6 +40,14 @@
       "target": [
         "nsis"
       ]
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": "bandloop",
+        "name": "Projet Bandloop",
+        "description": "Projet Bandloop",
+        "role": "Editor"
+      }
+    ]
   }
 }

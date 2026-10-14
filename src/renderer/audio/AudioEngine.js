@@ -11,6 +11,8 @@ import { clamp } from './scheduling.js';
 // avant l'instant de départ commun.
 const START_LATENCY = 0.05;
 
+const EDIT_EVENTS = new Set(['tracks', 'mix', 'arrange', 'volume', 'pan']);
+
 // Palette Bandloop : teintes saturées mais lisibles sur fond sombre.
 const TRACK_COLORS = ['#ff7a59', '#2fd4b5', '#a78bfa', '#4cc3ff', '#ff6b9e', '#ffbf47', '#8be36c'];
 
@@ -63,20 +65,31 @@ export class AudioEngine extends EventTarget {
     return this._anchorPosition + Math.max(0, ctxTime - this._anchorCtxTime);
   }
 
-  /** Décode un fichier audio et l'ajoute comme nouvelle piste. */
+  /**
+   * Décode un fichier audio et l'ajoute comme nouvelle piste. Les octets
+   * d'origine sont conservés pour être embarqués tels quels dans le projet
+   * (decodeAudioData détruit le tampon qu'on lui donne : on décode une copie).
+   */
   async addTrack(name, arrayBuffer) {
+    const bytes = new Uint8Array(arrayBuffer.slice(0));
     const buffer = await this.ctx.decodeAudioData(arrayBuffer);
-    return this.addBufferTrack(name, buffer);
+    return this.addBufferTrack(name, buffer, { origin: { kind: 'file', name, bytes } });
   }
 
   /**
    * Ajoute une piste à partir d'un AudioBuffer déjà prêt (ex. prise micro).
    * @param {{ startTime?: number }} [opts]  position du clip sur la timeline (s)
    */
-  addBufferTrack(name, buffer, { startTime = 0 } = {}) {
-    const color = TRACK_COLORS[this.tracks.length % TRACK_COLORS.length];
-    const track = new Track(this.ctx, this.master, { name, buffer, color });
+  addBufferTrack(name, buffer, { startTime = 0, origin = { kind: 'take' }, color } = {}) {
+    const track = new Track(this.ctx, this.master, {
+      name,
+      buffer,
+      color: color ?? TRACK_COLORS[this.tracks.length % TRACK_COLORS.length],
+    });
     track.startTime = Math.max(0, startTime);
+    // Origine de l'audio : fichier importé (octets d'origine) ou prise micro.
+    // (Ne pas confondre avec track.source, le nœud de lecture en cours.)
+    track.origin = origin;
     this.tracks.push(track);
     this.updateGains();
     if (this.state === 'playing') track.start(this.ctx.currentTime, this.position);
@@ -124,6 +137,23 @@ export class AudioEngine extends EventTarget {
     if (!track) return;
     track.volumeDb = db;
     this.updateGains();
+    this.#emit('volume');
+  }
+
+  setPan(id, pan) {
+    const track = this.getTrack(id);
+    if (!track) return;
+    track.setPan(pan);
+    this.#emit('pan');
+  }
+
+  /** Vide le projet (nouveau projet, ouverture d'un autre projet). */
+  clear() {
+    this.stop();
+    this.locked = false;
+    for (const track of this.tracks) track.dispose();
+    this.tracks = [];
+    this.#emit('tracks');
   }
 
   setMuted(id, muted) {
@@ -235,5 +265,7 @@ export class AudioEngine extends EventTarget {
 
   #emit(type, detail = {}) {
     this.dispatchEvent(new CustomEvent(type, { detail }));
+    // Toute modification du contenu du projet (pour le suivi « non enregistré »).
+    if (EDIT_EVENTS.has(type)) this.dispatchEvent(new CustomEvent('edit', { detail: { type, ...detail } }));
   }
 }

@@ -156,7 +156,7 @@ export class TrackPanel extends EventTarget {
       label: `Panoramique de ${track.name}`,
       format: formatPan,
       onInput: (v) => {
-        track.setPan(v);
+        engine.setPan(track.id, v);
         panValue.textContent = formatPan(v);
       },
     });

@@ -111,3 +111,19 @@ test('PresetStore : les presets fournis sont protégés, les entrées corrompues
   await assert.rejects(() => store.create('   ', {}));
   assert.ok(store.get('studio').builtin);
 });
+
+test('PresetStore.importPresets : ajoute les presets manquants d’un projet, sans doublon', async () => {
+  const storage = memoryStorage();
+  const store = new PresetStore(storage);
+  await store.load();
+  const settings = normalizeSettings({ pitch: { correct: true, speed: 33 } });
+  const n = await store.importPresets([
+    { id: 'user-x', name: 'Ma voix', settings },
+    { id: 'studio', name: 'Studio', settings }, // fourni : ignoré
+    { id: 'user-x', name: 'Doublon', settings },
+  ]);
+  assert.equal(n, 1);
+  assert.equal(store.settingsOf('user-x').pitch.speed, 33);
+  assert.equal(await store.importPresets([{ id: 'user-x', name: 'Ma voix', settings }]), 0);
+  assert.equal(storage.data.length, 1);
+});

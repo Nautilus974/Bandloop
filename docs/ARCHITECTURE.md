@@ -5,11 +5,13 @@
 ```
 ┌──────────────────────── Processus principal (Node) ─────────────────────────┐
 │ src/main/main.js   fenêtre, protocole app://, sécurité                       │
-│ src/main/ipc.js    boîte « ouvrir », fichiers, presets.json, accès micro OS  │
+│ src/main/ipc.js    dialogues, écriture atomique, presets.json, micro OS      │
+│ src/main/menu.js   menu Fichier (Nouveau, Ouvrir, Enregistrer, Exporter)     │
 └──────────────▲───────────────────────────────────────────────────────────────┘
                │ IPC (ipcRenderer.invoke ↔ ipcMain.handle)
 ┌──────────────┴───────── Preload (src/preload/preload.cjs) ───────────────────┐
-│ contextBridge → window.bandloop.{ openAudioFiles, presets, mic }             │
+│ contextBridge → window.bandloop.{ openAudioFiles, project, files, window,     │
+│                 onMenu, presets, mic }                                       │
 └──────────────▲───────────────────────────────────────────────────────────────┘
                │
 ┌──────────────┴───────── Renderer (Chromium, sans accès Node) ────────────────┐
@@ -27,6 +29,10 @@
 │   worklets/             AudioWorklet de bitcrush                             │
 │ presets/                24 presets fournis, PresetStore, stockage            │
 │ record/                 Recorder, AudioWorklet de capture, latence (purs)    │
+│ project/                format .bandloop, ZIP, FLAC, WAV, limiteur (purs),   │
+│                         ProjectManager (nouveau/ouvrir/enregistrer)          │
+│ export/                 rendu hors temps réel du mix, export WAV/MP3         │
+│ vendor/lamejs/          encodeur MP3 (LGPL, fichier séparé non modifié)      │
 │ ui/                     Timeline (canvas), TrackPanel, FxPanel, Knob, Meter, │
 │                         contrôles génériques, dialogues, icônes              │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -113,7 +119,7 @@ les calculs lourds et un AudioWorklet pour le bitcrush.
 
 ## Tests
 
-`npm test` lance `node:test` (81 tests) sur toute la logique pure :
+`npm test` lance `node:test` (100 tests) sur toute la logique pure :
 
 - transport et mixage ;
 - théorie musicale, détection de hauteur, correction, PSOLA et rendu vocal
@@ -124,16 +130,16 @@ les calculs lourds et un AudioWorklet pour le bitcrush.
 
 Les modules Web Audio et DOM restent fins. `npm run test:e2e` lance la vraie
 application Electron (Playwright, micro simulé) pour vérifier l'enregistrement :
-calage à l'échantillon, prise au micro, autorisations, et déplacement des pistes
-à la souris et au clavier.
+calage à l'échantillon, prise au micro, autorisations, déplacement des pistes,
+cycle sauvegarde → relance → réouverture identique, export WAV/MP3 et erreurs
+disque. Voir [PROJETS-ET-EXPORT.md](PROJETS-ET-EXPORT.md).
 
 ## Évolutions prévues
 
-| Étape | Sujet                        | Piste technique                                                                       |
-| ----- | ---------------------------- | ------------------------------------------------------------------------------------- |
-| 1     | Découper les clips, annuler  | Modèle `Clip` séparé de `Track`, `start(when, offset, duration)` ; pile d'annulation  |
-| 2     | Sauvegarde de projet         | JSON (pistes, réglages vocaux, tonalité) + fichiers audio dans un dossier `.bandloop` |
-| 3     | Punch-in et prises en boucle | Remplacement d'un passage, plusieurs prises par piste (modèle `Clip`)                 |
-| 4     | Correction en direct         | YIN + PSOLA dans un AudioWorklet (les briques `dsp/` sont déjà sans DOM)              |
-| 5     | Export / mixdown             | `OfflineAudioContext` → WAV                                                           |
-| 6     | Import / export de presets   | Fichier `.blpreset` (JSON validé par `normalizeSettings`)                             |
+| Étape | Sujet                                          | Piste technique                                                                      |
+| ----- | ---------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 1     | Découper les clips, annuler                    | Modèle `Clip` séparé de `Track`, `start(when, offset, duration)` ; pile d'annulation |
+| 2     | Punch-in et prises en boucle                   | Remplacement d'un passage, plusieurs prises par piste (modèle `Clip`)                |
+| 3     | Correction en direct                           | YIN + PSOLA dans un AudioWorklet (les briques `dsp/` sont déjà sans DOM)             |
+| 4     | Annuler / rétablir, enregistrement automatique | Pile de commandes sur le moteur ; sauvegarde de secours périodique                   |
+| 5     | Import / export de presets                     | Fichier `.blpreset` (JSON validé par `normalizeSettings`)                            |

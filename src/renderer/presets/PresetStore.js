@@ -107,6 +107,29 @@ export class PresetStore extends EventTarget {
     await this.#persist();
   }
 
+  /**
+   * Ajoute des presets personnels venus d'un projet ouvert (s'ils manquent),
+   * en gardant leur identifiant pour que les pistes s'y rattachent.
+   * @returns {Promise<number>} nombre de presets ajoutés
+   */
+  async importPresets(list) {
+    let added = 0;
+    for (const p of list ?? []) {
+      if (!p || typeof p.id !== 'string' || typeof p.name !== 'string' || this.get(p.id)) continue;
+      this.user.push({
+        id: p.id,
+        name: this.#uniqueName(cleanName(p.name)),
+        category: USER_CATEGORY.id,
+        description: typeof p.description === 'string' ? p.description : '',
+        settings: serializeSettings(p.settings),
+        builtin: false,
+      });
+      added++;
+    }
+    if (added) await this.#persist();
+    return added;
+  }
+
   /** « Studio » existe déjà -> « Studio 2 ». */
   #uniqueName(name, exceptId = null) {
     const taken = new Set(this.user.filter((p) => p.id !== exceptId).map((p) => p.name.toLowerCase()));
