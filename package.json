@@ -9,17 +9,37 @@
     "test": "node --test \"test/*.test.js\"",
     "samples": "node scripts/generate-samples.js",
     "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win"
+    "dist:win": "electron-builder --win",
+    "test:e2e": "node scripts/generate-samples.js && node --test --test-concurrency=1 \"test/e2e/*.e2e.js\""
   },
   "devDependencies": {
     "electron": "^44.7.2",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "playwright-core": "^1.56.1"
   },
   "build": {
     "appId": "com.bandloop.app",
     "productName": "Bandloop",
-    "files": ["src/**/*", "package.json"],
-    "mac": { "target": ["dmg"], "category": "public.app-category.music" },
-    "win": { "target": ["nsis"] }
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.music",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Bandloop utilise le micro pour enregistrer de nouvelles pistes (voix, instruments)."
+      }
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    }
   }
 }

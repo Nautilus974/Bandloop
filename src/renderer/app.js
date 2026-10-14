@@ -2,10 +2,12 @@
 import { AudioEngine } from './audio/AudioEngine.js';
 import { PresetStore } from './presets/PresetStore.js';
 import { createPresetStorage } from './presets/storage.js';
+import { Recorder } from './record/Recorder.js';
 import { svg } from './ui/dom.js';
 import { FxPanel } from './ui/FxPanel.js';
 import { icons, logo } from './ui/icons.js';
 import { Meter } from './ui/Meter.js';
+import { RecordPanel } from './ui/RecordPanel.js';
 import { Timeline } from './ui/Timeline.js';
 import { formatTime } from './ui/time.js';
 import { TrackPanel } from './ui/TrackPanel.js';
@@ -23,6 +25,11 @@ const engine = new AudioEngine();
 // nouvelle piste avant que les panneaux ne se redessinent.
 const hub = new VocalHub(engine);
 const presets = new PresetStore(createPresetStorage());
+const bridge = window.bandloop;
+const recorder = new Recorder(engine, {
+  platform: bridge?.platform ?? 'web',
+  requestSystemAccess: bridge?.mic ? () => bridge.mic.requestAccess() : undefined,
+});
 
 // --- État d'interface -------------------------------------------------------
 
@@ -50,19 +57,27 @@ const ui = {
   },
   onClose: () => setFxOpen(false),
   notify: (message, isError) => setStatus(message, isError),
+  getLiveTake: () => recorder.liveTake,
+  isRecording: () => recorder.state === 'recording' || recorder.state === 'finishing',
 };
 
 const timeline = new Timeline($('#timeline'), engine, ui);
 const trackPanel = new TrackPanel($('#track-panel'), engine, ui);
 const fxPanel = new FxPanel($('#fx-panel'), engine, hub, presets, ui);
 const meter = new Meter($('#meter'));
+const recordPanel = new RecordPanel($('#record-panel'), recorder, {
+  engine,
+  openSystemSettings: bridge?.mic ? () => bridge.mic.openSettings() : undefined,
+  onClose: () => setRecordPanelOpen(false),
+  notify: (message, isError) => setStatus(message, isError),
+});
 
 const playBtn = $('#btn-play');
 const timeDisplay = $('#time-display');
 const statusEl = $('#status');
 
 // Exposé pour le débogage dans la console DevTools.
-Object.assign(window, { engine, hub, presets });
+Object.assign(window, { engine, hub, presets, recorder });
 
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
@@ -74,6 +89,12 @@ function setFxOpen(open) {
   else fxPanel.close();
   $('#btn-fx-toggle').setAttribute('aria-pressed', String(open));
   timeline.invalidate();
+}
+
+function setRecordPanelOpen(open) {
+  if (open) recordPanel.open();
+  else recordPanel.close();
+  $('#btn-record-settings').setAttribute('aria-expanded', String(open));
 }
 
 function updateInfo() {
@@ -115,6 +136,7 @@ async function openImportDialog() {
 
 $('#btn-import').addEventListener('click', openImportDialog);
 $('#btn-import-empty').addEventListener('click', openImportDialog);
+$('#btn-record-empty').addEventListener('click', () => setRecordPanelOpen(true));
 
 $('#file-input').addEventListener('change', async (e) => {
   await importFiles(await readBrowserFiles(e.target.files));
@@ -145,13 +167,34 @@ window.addEventListener('drop', async (e) => {
 
 // --- Transport --------------------------------------------------------------
 
+const recording = () => recorder.state === 'recording' || recorder.state === 'countdown';
+
 function togglePlay() {
-  if (engine.state === 'playing') engine.pause();
+  if (recording())
+    recorder.stop(); // pendant une prise, lecture/pause = fin de prise
+  else if (engine.state === 'playing') engine.pause();
   else engine.play();
 }
 
+async function toggleRecord() {
+  if (recording()) return recorder.stop();
+  await recorder.record();
+  // Accès refusé, pas de micro… : on affiche le panneau avec le message.
+  if (recorder.error && !recordPanel.isOpen) setRecordPanelOpen(true);
+}
+
+function stopAll() {
+  if (recording()) recorder.stop();
+  else engine.stop();
+}
+
 playBtn.addEventListener('click', togglePlay);
-$('#btn-stop').addEventListener('click', () => engine.stop());
+$('#btn-stop').addEventListener('click', stopAll);
+$('#btn-record').addEventListener('click', toggleRecord);
+$('#btn-record-settings').addEventListener('click', (e) => {
+  setRecordPanelOpen(!recordPanel.isOpen);
+  if (e.detail > 0) e.currentTarget.blur(); // clic souris : pas d'anneau de focus résiduel
+});
 $('#btn-start').addEventListener('click', () => engine.seek(0));
 $('#btn-fx-toggle').addEventListener('click', () => setFxOpen(!fxPanel.isOpen));
 
@@ -167,7 +210,13 @@ window.addEventListener('keydown', (e) => {
     togglePlay();
   } else if (e.code === 'Enter') {
     e.preventDefault();
-    engine.stop();
+    stopAll();
+  } else if (e.code === 'KeyR' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    e.preventDefault();
+    toggleRecord();
+  } else if (e.code === 'Escape') {
+    if (recorder.state === 'countdown') recorder.stop();
+    else if (recordPanel.isOpen && !document.querySelector('dialog[open]')) setRecordPanelOpen(false);
   } else if (e.code === 'Home') {
     e.preventDefault();
     engine.seek(0);
@@ -212,6 +261,50 @@ hub.addEventListener('change', () => {
   timeline.invalidate();
 });
 
+// --- Enregistrement ---------------------------------------------------------
+
+let lastRecorderState = recorder.state;
+recorder.addEventListener('change', () => {
+  const { state } = recorder;
+  const rec = state === 'recording' || state === 'finishing';
+  document.body.classList.toggle('is-recording', rec);
+  $('#btn-record').classList.toggle('armed', state === 'countdown' || rec);
+  $('#btn-record').setAttribute(
+    'aria-label',
+    rec || state === 'countdown' ? 'Arrêter l’enregistrement' : 'Enregistrer',
+  );
+  $('#countdown').hidden = state !== 'countdown';
+  const countEl = $('#countdown-value');
+  if (countEl.textContent !== String(recorder.countdownValue || '')) {
+    countEl.textContent = String(recorder.countdownValue || '');
+    countEl.style.animation = 'none';
+    void countEl.offsetWidth; // relance l'animation à chaque chiffre
+    countEl.style.animation = '';
+  }
+  if (state === 'countdown') setStatus('Prépare-toi… (Échap pour annuler)');
+  if (state === 'recording' && lastRecorderState !== 'recording') {
+    setStatus(`Enregistrement depuis ${recorder.deviceLabel || 'le micro'}… (Espace ou R pour arrêter)`);
+  }
+  // La voie « enregistrement en cours » apparaît / disparaît.
+  if (rec !== (lastRecorderState === 'recording' || lastRecorderState === 'finishing')) {
+    trackPanel.render();
+    trackPanel.refresh();
+    timeline.invalidate();
+  }
+  if (recorder.error && state === 'idle') setStatus(`${recorder.error.title} : ${recorder.error.text}`, true);
+  lastRecorderState = state;
+});
+
+recorder.addEventListener('take', ({ detail }) => {
+  const { track, latency } = detail;
+  ui.select(track.id);
+  setStatus(
+    `${track.name} ajoutée à ${formatTime(track.startTime)} (latence compensée : ${Math.round(latency * 1000)} ms). Clique sur FX pour lui appliquer un preset vocal.`,
+  );
+});
+
+recorder.addEventListener('message', ({ detail }) => setStatus(detail.text));
+
 const RENDER_MESSAGES = {
   analyzing: 'Analyse de la hauteur de « %s »…',
   rendering: 'Calcul des effets vocaux de « %s »…',
@@ -229,11 +322,17 @@ hub.addEventListener('status', ({ detail }) => {
 
 function frame() {
   if (engine.state === 'playing') {
-    if (engine.position >= engine.duration) engine.stop();
+    // Pendant une prise, le transport continue au-delà de la fin du projet.
+    if (!engine.locked && engine.position >= engine.duration) engine.stop();
     else timeline.followPlayhead();
   }
   timeDisplay.textContent = formatTime(engine.position);
   meter.update(engine.state === 'playing' ? engine.readMeters() : [0, 0]);
+  if (recorder.state === 'recording') {
+    timeline.invalidate(); // la prise s'allonge
+    $('#btn-record').style.setProperty('--level', Math.min(1, recorder.readLevel() * 2));
+  }
+  recordPanel.tick();
   timeline.render();
   requestAnimationFrame(frame);
 }

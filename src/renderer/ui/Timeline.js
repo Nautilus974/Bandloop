@@ -20,6 +20,7 @@ const COLORS = {
   gridMajor: '#1f242c',
   playhead: '#d7ff4f',
 };
+const REC_COLOR = '#ff4d6d';
 const CLIP_PAD = 6;
 const CLIP_HEADER = 18;
 
@@ -27,7 +28,7 @@ export class Timeline {
   /**
    * @param {HTMLElement} scroller  Conteneur scrollable horizontalement
    * @param {import('../audio/AudioEngine.js').AudioEngine} engine
-   * @param {{ getSelectedId: () => number|null, select: (id: number) => void, fxLabel?: (id: number) => string|null }} ui
+   * @param {{ getSelectedId: () => number|null, select: (id: number) => void, fxLabel?: (id: number) => string|null, getLiveTake?: () => object|null }} ui
    */
   constructor(scroller, engine, ui) {
     this.scroller = scroller;
@@ -100,12 +101,22 @@ export class Timeline {
     }
   }
 
+  /** Prise en cours d'enregistrement, dessinée comme un clip dans une voie supplémentaire. */
+  #liveClip() {
+    const live = this.ui.getLiveTake?.();
+    if (!live) return null;
+    return { id: -1, name: '● Enregistrement…', color: REC_COLOR, ...live };
+  }
+
   #updateSize() {
     const dpr = window.devicePixelRatio || 1;
     const width = this.scroller.clientWidth;
-    const height = RULER_HEIGHT + this.engine.tracks.length * TRACK_HEIGHT;
+    const live = this.#liveClip();
+    const lanes = this.engine.tracks.length + (live ? 1 : 0);
+    const height = RULER_HEIGHT + lanes * TRACK_HEIGHT;
     // Un peu de marge après la fin du projet pour pouvoir y positionner la tête.
-    const contentWidth = Math.max(width, (this.engine.duration + 5) * this.pixelsPerSecond);
+    const end = Math.max(this.engine.duration, live ? live.startTime + live.duration : 0, this.engine.position);
+    const contentWidth = Math.max(width, (end + 5) * this.pixelsPerSecond);
     this.spacer.style.width = `${contentWidth}px`;
     for (const c of [this.canvas, this.layer]) {
       c.width = Math.round(width * dpr);
@@ -151,6 +162,13 @@ export class Timeline {
     }
 
     this.engine.tracks.forEach((track, i) => this.#drawClip(g, track, RULER_HEIGHT + i * TRACK_HEIGHT, width));
+    const live = this.#liveClip();
+    if (live) {
+      const top = RULER_HEIGHT + this.engine.tracks.length * TRACK_HEIGHT;
+      g.fillStyle = 'rgb(255 77 109 / 6%)';
+      g.fillRect(0, top, width, TRACK_HEIGHT);
+      this.#drawClip(g, live, top, width);
+    }
 
     // Règle.
     g.fillStyle = COLORS.ruler;
@@ -182,7 +200,8 @@ export class Timeline {
     const h = TRACK_HEIGHT - CLIP_PAD * 2 - 1;
 
     g.save();
-    g.globalAlpha = this.engine.isAudible(track) ? 1 : 0.32;
+    const audible = track.id < 0 || this.engine.isAudible(track);
+    g.globalAlpha = audible ? 1 : 0.32;
     g.beginPath();
     g.roundRect(clipX, top, clipW, h, 6);
     g.clip();
@@ -229,7 +248,7 @@ export class Timeline {
 
     // Contour.
     g.save();
-    g.globalAlpha = this.engine.isAudible(track) ? 0.55 : 0.2;
+    g.globalAlpha = audible ? 0.55 : 0.2;
     g.strokeStyle = track.color;
     g.lineWidth = 1;
     g.beginPath();

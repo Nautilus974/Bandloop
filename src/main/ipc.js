@@ -1,9 +1,15 @@
 // Canaux IPC exposés au renderer (via le preload).
-import { app, BrowserWindow, dialog, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, shell, systemPreferences } from 'electron';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
 export const AUDIO_EXTENSIONS = ['wav', 'mp3', 'ogg', 'flac', 'm4a', 'aac', 'opus', 'webm'];
+
+// Pages de réglages de confidentialité du micro (liste fermée : rien d'autre ne peut être ouvert).
+const MIC_SETTINGS_URLS = {
+  darwin: 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
+  win32: 'ms-settings:privacy-microphone',
+};
 
 const presetsFile = () => path.join(app.getPath('userData'), 'presets.json');
 
@@ -24,6 +30,25 @@ export function registerIpcHandlers() {
         data: await fs.readFile(filePath), // arrive comme Uint8Array côté renderer
       })),
     );
+  });
+
+  // Accès au micro au niveau du système d'exploitation.
+  // macOS : demande l'autorisation (fenêtre système) la première fois.
+  // Windows : indique si le réglage de confidentialité bloque les applications.
+  // Renvoie 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown'.
+  ipcMain.handle('mic:request-access', async () => {
+    if (process.platform !== 'darwin' && process.platform !== 'win32') return 'unknown';
+    const status = systemPreferences.getMediaAccessStatus('microphone');
+    if (process.platform === 'darwin' && status === 'not-determined') {
+      return (await systemPreferences.askForMediaAccess('microphone')) ? 'granted' : 'denied';
+    }
+    return status;
+  });
+
+  ipcMain.handle('mic:open-settings', async () => {
+    const url = MIC_SETTINGS_URLS[process.platform];
+    if (url) await shell.openExternal(url);
+    return !!url;
   });
 
   // Presets utilisateur : un fichier JSON dans le dossier de données de l'app

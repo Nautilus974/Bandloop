@@ -58,6 +58,7 @@
   --mute: #8aa6ff;
   --solo: #ffb547;
   --danger: #ff5f6d;
+  --rec: #ff4d6d;
 
   --radius-s: 6px;
   --radius-m: 9px;
@@ -1531,6 +1532,340 @@ body.dragging .workspace {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 8px;
+}
+
+/* ---------- Enregistrement ---------- */
+
+.rec-dot {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--rec);
+}
+
+.rec-dot.small {
+  width: 9px;
+  height: 9px;
+}
+
+.rec-group {
+  display: flex;
+  align-items: center;
+}
+
+.t-record {
+  --level: 0;
+  width: 38px;
+}
+
+.t-record:hover .rec-dot {
+  box-shadow: 0 0 0 4px rgb(255 77 109 / 18%);
+}
+
+/* Pendant la prise : bouton plein rouge, halo proportionnel au niveau du micro. */
+.t-record.armed {
+  background: var(--rec);
+  box-shadow: 0 0 0 calc(var(--level) * 7px) rgb(255 77 109 / 35%);
+  transition: box-shadow 0.06s linear;
+}
+
+.t-record.armed .rec-dot {
+  background: #fff;
+  animation: rec-blink 1s steps(2, start) infinite;
+}
+
+@keyframes rec-blink {
+  to {
+    opacity: 0.35;
+  }
+}
+
+.t-rec-settings {
+  width: 20px;
+  margin-left: -2px;
+}
+
+.t-rec-settings .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.t-rec-settings[aria-expanded='true'] {
+  color: var(--text);
+  background: var(--bg-3);
+}
+
+body.is-recording .clock-time {
+  color: var(--rec);
+}
+
+body.is-recording .transport {
+  border-color: rgb(255 77 109 / 45%);
+}
+
+/* Panneau d'enregistrement (sous la barre de transport) */
+.record-panel {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: 400px;
+  max-height: calc(100vh - 100px);
+  transform: translateX(-50%);
+  border: 1px solid var(--line-3);
+  border-radius: var(--radius-l);
+  background: var(--bg-3);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 55%);
+}
+
+.record-panel[hidden] {
+  display: none;
+}
+
+.rp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 10px 12px 16px;
+  border-bottom: 1px solid var(--line-2);
+}
+
+.rp-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.rp-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  overflow-y: auto;
+}
+
+.rp-row {
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.rp-row .select {
+  width: 100%;
+  min-width: 0;
+}
+
+.input-meter {
+  width: auto;
+  padding: 0;
+}
+
+.input-meter .meter-bar {
+  height: 8px;
+}
+
+.input-meter .meter-fill {
+  background-size: 100% 100%;
+}
+
+.level-hint {
+  margin: -6px 0 0 114px;
+  min-height: 1.2em;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.level-hint[data-level='good'] {
+  color: var(--accent-2);
+}
+
+.level-hint[data-level='low'],
+.level-hint[data-level='hot'] {
+  color: var(--solo);
+}
+
+.level-hint[data-level='none'],
+.level-hint[data-level='clip'] {
+  color: var(--danger);
+}
+
+.rp-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-m);
+  background: var(--bg-1);
+}
+
+.rp-block .param {
+  grid-template-columns: 92px 1fr 56px;
+}
+
+.rp-latency-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.latency-auto {
+  flex: 1;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.rp-toggle {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.rp-toggle .switch {
+  margin-top: 1px;
+}
+
+.rp-toggle-title {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.rp-toggle .fx-caption {
+  margin-top: 2px;
+}
+
+.rp-error {
+  padding: 12px;
+  border: 1px solid rgb(255 95 109 / 45%);
+  border-radius: var(--radius-m);
+  background: rgb(255 95 109 / 9%);
+}
+
+.rp-error strong {
+  color: var(--danger);
+}
+
+.rp-error p {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-2);
+}
+
+.rp-error-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.rp-foot {
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--line-2);
+}
+
+.rp-record {
+  justify-content: center;
+  width: 100%;
+  height: 40px;
+  border-color: rgb(255 77 109 / 50%);
+  background: rgb(255 77 109 / 12%);
+  font-weight: 650;
+}
+
+.rp-record:hover {
+  border-color: var(--rec);
+  background: rgb(255 77 109 / 20%);
+}
+
+.rp-record.active {
+  background: var(--rec);
+  border-color: var(--rec);
+  color: #fff;
+}
+
+.rp-record.active .rec-dot {
+  background: #fff;
+}
+
+.rp-record:disabled,
+.segmented button:disabled,
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Compte à rebours */
+.body {
+  position: relative;
+}
+
+.countdown {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgb(10 12 15 / 72%);
+  pointer-events: none;
+}
+
+.countdown[hidden] {
+  display: none;
+}
+
+.countdown-value {
+  font: 700 140px/1 var(--font-ui);
+  letter-spacing: -0.06em;
+  color: var(--rec);
+  text-shadow: 0 8px 40px rgb(255 77 109 / 40%);
+  animation: count-pop 1s var(--ease);
+}
+
+.countdown-hint {
+  font-size: 12px;
+  color: var(--text-2);
+}
+
+@keyframes count-pop {
+  from {
+    transform: scale(1.35);
+    opacity: 0.2;
+  }
+  25% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Voie « enregistrement en cours » du panneau de pistes */
+.track.rec-lane {
+  --track-color: var(--rec);
+  background: rgb(255 77 109 / 6%);
+}
+
+.track.rec-lane .track-strip {
+  opacity: 1;
+  animation: rec-blink 1s steps(2, start) infinite;
+}
+
+.rec-lane-hint {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.empty-actions {
+  display: flex;
+  gap: 8px;
 }
 
 /* ---------- Barre d'état ---------- */

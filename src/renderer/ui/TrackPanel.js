@@ -29,7 +29,7 @@ export class TrackPanel extends EventTarget {
 
   render() {
     const selected = this.ui.getSelectedId();
-    this.container.replaceChildren(
+    const children = [
       h(
         'div',
         { className: 'panel-ruler' },
@@ -37,7 +37,26 @@ export class TrackPanel extends EventTarget {
         h('span', { className: 'count' }, String(this.engine.tracks.length)),
       ),
       ...this.engine.tracks.map((track, index) => this.#renderTrack(track, index, track.id === selected)),
-    );
+      this.ui.isRecording?.()
+        ? h(
+            'div',
+            { className: 'track rec-lane', 'aria-live': 'polite' },
+            h('div', { className: 'track-strip' }),
+            h(
+              'div',
+              { className: 'track-main' },
+              h(
+                'div',
+                { className: 'track-top' },
+                h('span', { className: 'rec-dot small' }),
+                h('span', { className: 'track-name' }, 'Enregistrement en cours'),
+              ),
+              h('span', { className: 'rec-lane-hint' }, 'La prise deviendra une nouvelle piste à l’arrêt.'),
+            ),
+          )
+        : null,
+    ];
+    this.container.replaceChildren(...children.filter(Boolean));
   }
 
   /** Met à jour les états visuels sans reconstruire le DOM (sélection, mute, solo, FX). */

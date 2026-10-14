@@ -41,6 +41,9 @@ export class AudioEngine extends EventTarget {
     this._position = 0;
     this._anchorCtxTime = 0; // instant AudioContext du dernier démarrage
     this._anchorPosition = 0; // position timeline au dernier démarrage
+    // Pendant un enregistrement, le transport est verrouillé : déplacer la tête
+    // décalerait la prise par rapport aux pistes.
+    this.locked = false;
   }
 
   /** Durée du projet : fin du clip le plus long. */
@@ -51,15 +54,28 @@ export class AudioEngine extends EventTarget {
   /** Position courante de la tête de lecture (s). */
   get position() {
     if (this.state !== 'playing') return this._position;
-    const elapsed = this.ctx.currentTime - this._anchorCtxTime;
-    return this._anchorPosition + Math.max(0, elapsed);
+    return this.positionAt(this.ctx.currentTime);
+  }
+
+  /** Position de la timeline à un instant donné de l'horloge AudioContext (lecture en cours). */
+  positionAt(ctxTime) {
+    return this._anchorPosition + Math.max(0, ctxTime - this._anchorCtxTime);
   }
 
   /** Décode un fichier audio et l'ajoute comme nouvelle piste. */
   async addTrack(name, arrayBuffer) {
     const buffer = await this.ctx.decodeAudioData(arrayBuffer);
+    return this.addBufferTrack(name, buffer);
+  }
+
+  /**
+   * Ajoute une piste à partir d'un AudioBuffer déjà prêt (ex. prise micro).
+   * @param {{ startTime?: number }} [opts]  position du clip sur la timeline (s)
+   */
+  addBufferTrack(name, buffer, { startTime = 0 } = {}) {
     const color = TRACK_COLORS[this.tracks.length % TRACK_COLORS.length];
     const track = new Track(this.ctx, this.master, { name, buffer, color });
+    track.startTime = Math.max(0, startTime);
     this.tracks.push(track);
     this.updateGains();
     if (this.state === 'playing') track.start(this.ctx.currentTime, this.position);
@@ -68,6 +84,7 @@ export class AudioEngine extends EventTarget {
   }
 
   removeTrack(id) {
+    if (this.locked) return;
     const track = this.tracks.find((t) => t.id === id);
     if (!track) return;
     track.dispose();
@@ -138,13 +155,20 @@ export class AudioEngine extends EventTarget {
     });
   }
 
-  async play() {
-    if (this.state === 'playing' || this.tracks.length === 0) return;
+  /**
+   * @param {{ allowEmpty?: boolean }} [opts]  allowEmpty : faire tourner le transport
+   *   même sans piste ou au-delà de la fin (enregistrement).
+   * @returns {Promise<{ when: number, position: number } | null>} instant et position de départ
+   */
+  async play({ allowEmpty = false } = {}) {
+    if (this.state === 'playing') return { when: this._anchorCtxTime, position: this._anchorPosition };
+    if (this.tracks.length === 0 && !allowEmpty) return null;
     // Les navigateurs suspendent l'AudioContext tant qu'il n'y a pas eu d'interaction.
     if (this.ctx.state === 'suspended') await this.ctx.resume();
-    if (this._position >= this.duration) this._position = 0;
+    if (!allowEmpty && this._position >= this.duration) this._position = 0;
     this.#startAll(this._position);
     this.#setState('playing');
+    return { when: this._anchorCtxTime, position: this._anchorPosition };
   }
 
   pause() {
@@ -161,6 +185,7 @@ export class AudioEngine extends EventTarget {
   }
 
   seek(seconds) {
+    if (this.locked) return;
     const target = clamp(seconds, 0, this.duration);
     if (this.state === 'playing') {
       this.#stopAll();

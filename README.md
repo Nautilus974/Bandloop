@@ -10,6 +10,10 @@ vocaux et des presets. Construit avec **Electron** et la **Web Audio API**.
 - **Multipiste** : import (dialogue ou glisser-déposer), timeline avec formes
   d'onde et zoom, lecture synchronisée à l'échantillon, play / pause / stop,
   déplacement de la tête de lecture.
+- **Enregistrement au micro** : choix du micro, VU-mètre d'entrée, compte à
+  rebours, pistes existantes jouées en guide, prise calée à l'échantillon avec
+  compensation (et mesure) de la latence. La prise devient une piste normale,
+  avec presets et effets vocaux appliqués après coup.
 - **Console** : volume en dB, panoramique, mute et solo par piste, VU-mètre
   stéréo et limiteur sur le master.
 - **Moteur vocal** :
@@ -46,17 +50,21 @@ morceau** (ici La mineur, c'est-à-dire `La` + `Mineur naturel`).
 
 ## Scripts
 
-| Commande           | Rôle                                         |
-| ------------------ | -------------------------------------------- |
-| `npm start`        | Lance l'app en développement                 |
-| `npm test`         | Tests unitaires (`node:test`, sans Electron) |
-| `npm run samples`  | Génère des WAV de démo                       |
-| `npm run dist:mac` | Construit un `.dmg` (à lancer sur un Mac)    |
-| `npm run dist:win` | Construit un installeur `.exe` (NSIS)        |
+| Commande           | Rôle                                                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `npm start`        | Lance l'app en développement                                                                                        |
+| `npm test`         | Tests unitaires (`node:test`, sans Electron)                                                                        |
+| `npm run test:e2e` | Tests de bout en bout dans l'app Electron (enregistrement) ; sous Linux sans écran : `xvfb-run -a npm run test:e2e` |
+| `npm run samples`  | Génère des WAV de démo                                                                                              |
+| `npm run dist:mac` | Construit un `.dmg` (à lancer sur un Mac)                                                                           |
+| `npm run dist:win` | Construit un installeur `.exe` (NSIS)                                                                               |
 
 ## Documentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) : processus Electron, graphe
   audio, transport, interface.
+- [docs/ENREGISTREMENT.md](docs/ENREGISTREMENT.md) : enregistrement au micro,
+  calage et latence, **limites** (latence, qualité du micro, monitoring sans
+  écho).
 - [docs/MOTEUR-VOCAL.md](docs/MOTEUR-VOCAL.md) : briques audio de chaque effet,
   algorithmes, presets, **limites de qualité**.

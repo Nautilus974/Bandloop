@@ -1,6 +1,6 @@
 // Processus principal : fenêtres, menus et accès au système de fichiers.
 // Aucun traitement audio ici : tout le moteur vit dans le renderer (Web Audio).
-import { app, BrowserWindow, net, protocol } from 'electron';
+import { app, BrowserWindow, net, protocol, session } from 'electron';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { registerIpcHandlers } from './ipc.js';
@@ -43,8 +43,30 @@ function createWindow() {
   win.loadURL('app://bandloop/index.html');
 }
 
+const APP_ORIGIN = 'app://bandloop';
+
+/**
+ * Autorisations Chromium : seul l'accès au micro (audio, pas la caméra) est
+ * accordé, et seulement à l'interface de Bandloop. Tout le reste est refusé.
+ */
+function configurePermissions() {
+  const isAudioOnly = (details) => {
+    const types = details?.mediaTypes ?? [];
+    return types.length > 0 && types.every((t) => t === 'audio');
+  };
+  const fromApp = (url) => typeof url === 'string' && url.startsWith(APP_ORIGIN);
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    callback(permission === 'media' && isAudioOnly(details) && fromApp(details.requestingUrl ?? webContents.getURL()));
+  });
+  // Nécessaire pour que enumerateDevices() donne les noms des micros.
+  session.defaultSession.setPermissionCheckHandler(
+    (_webContents, permission, origin) => permission === 'media' && fromApp(origin),
+  );
+}
+
 app.whenReady().then(() => {
   protocol.handle('app', serveRenderer);
+  configurePermissions();
   registerIpcHandlers();
   createWindow();
   // macOS : recréer une fenêtre quand on clique sur l'icône du Dock.

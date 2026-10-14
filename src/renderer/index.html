@@ -40,6 +40,19 @@
           title="Lecture / pause (Espace)"
           aria-label="Lecture"
         ></button>
+        <div class="rec-group">
+          <button id="btn-record" class="t-btn t-record" title="Enregistrer (R)" aria-label="Enregistrer">
+            <span class="rec-dot"></span>
+          </button>
+          <button
+            id="btn-record-settings"
+            class="t-btn t-rec-settings"
+            data-icon="chevronDown"
+            title="Réglages d'enregistrement : micro, niveau, latence"
+            aria-label="Réglages d'enregistrement"
+            aria-expanded="false"
+          ></button>
+        </div>
         <div class="clock">
           <output id="time-display" class="clock-time">0:00.000</output>
           <span id="time-total" class="clock-total">/ 0:00.000</span>
@@ -67,7 +80,13 @@
       </div>
     </header>
 
+    <div id="record-panel" class="record-panel" role="dialog" aria-label="Enregistrement" hidden></div>
+
     <div class="body">
+      <div id="countdown" class="countdown" aria-live="assertive" hidden>
+        <span id="countdown-value" class="countdown-value"></span>
+        <span class="countdown-hint">Échap pour annuler</span>
+      </div>
       <main id="workspace" class="workspace">
         <aside id="track-panel" class="track-panel" aria-label="Pistes"></aside>
         <section id="timeline" class="timeline" aria-label="Timeline">
@@ -79,8 +98,11 @@
             <span id="empty-logo" class="empty-logo"></span>
             <h1>Commence ton morceau</h1>
             <p>Glisse des fichiers audio dans la fenêtre ou importe-les.</p>
-            <button id="btn-import-empty" class="btn btn-primary" data-icon="import">Importer des pistes</button>
-            <p class="hint">WAV · MP3 · OGG · FLAC · M4A — <kbd>Espace</kbd> lecture, <kbd>Entrée</kbd> stop</p>
+            <div class="empty-actions">
+              <button id="btn-import-empty" class="btn btn-primary" data-icon="import">Importer des pistes</button>
+              <button id="btn-record-empty" class="btn"><span class="rec-dot small"></span>Enregistrer au micro</button>
+            </div>
+            <p class="hint">WAV · MP3 · OGG · FLAC · M4A — <kbd>Espace</kbd> lecture, <kbd>R</kbd> enregistrer</p>
           </div>
         </div>
       </main>

@@ -5,11 +5,11 @@
 ```
 ┌──────────────────────── Processus principal (Node) ─────────────────────────┐
 │ src/main/main.js   fenêtre, protocole app://, sécurité                       │
-│ src/main/ipc.js    boîte « ouvrir », lecture des fichiers, presets.json      │
+│ src/main/ipc.js    boîte « ouvrir », fichiers, presets.json, accès micro OS  │
 └──────────────▲───────────────────────────────────────────────────────────────┘
                │ IPC (ipcRenderer.invoke ↔ ipcMain.handle)
 ┌──────────────┴───────── Preload (src/preload/preload.cjs) ───────────────────┐
-│ contextBridge → window.bandloop.{ openAudioFiles, presets.load/save }        │
+│ contextBridge → window.bandloop.{ openAudioFiles, presets, mic }             │
 └──────────────▲───────────────────────────────────────────────────────────────┘
                │
 ┌──────────────┴───────── Renderer (Chromium, sans accès Node) ────────────────┐
@@ -25,6 +25,7 @@
 │   fx/                   catalogue, nœuds Web Audio, courbes, FxChain         │
 │   worklets/             AudioWorklet de bitcrush                             │
 │ presets/                24 presets fournis, PresetStore, stockage            │
+│ record/                 Recorder, AudioWorklet de capture, latence (purs)    │
 │ ui/                     Timeline (canvas), TrackPanel, FxPanel, Knob, Meter, │
 │                         contrôles génériques, dialogues, icônes              │
 └──────────────────────────────────────────────────────────────────────────────┘
@@ -45,6 +46,9 @@ les calculs lourds et un AudioWorklet pour le bitcrush.
   AudioWorklets. Le gestionnaire refuse tout chemin hors de `src/renderer`.
 - Une CSP stricte est définie dans `index.html`, sans script inline ni distant.
   Les polices sont embarquées (Inter, JetBrains Mono, licence OFL).
+- Autorisations : seul le **micro** (audio, sans la caméra) est accordé, et
+  seulement à l'origine `app://bandloop`. Voir
+  [ENREGISTREMENT.md](ENREGISTREMENT.md).
 - Toute navigation est bloquée (`will-navigate`) et l'ouverture de fenêtres
   refusée.
 
@@ -108,7 +112,7 @@ les calculs lourds et un AudioWorklet pour le bitcrush.
 
 ## Tests
 
-`npm test` lance `node:test` (66 tests) sur toute la logique pure :
+`npm test` lance `node:test` (75 tests) sur toute la logique pure :
 
 - transport et mixage ;
 - théorie musicale, détection de hauteur, correction, PSOLA et rendu vocal
@@ -117,8 +121,9 @@ les calculs lourds et un AudioWorklet pour le bitcrush.
 - les 24 presets : catégories, ordre, valeurs non corrigées par la validation ;
 - `PresetStore` : création, modification, suppression, persistance.
 
-Les modules Web Audio et DOM restent fins. Ils ont été vérifiés de bout en bout
-dans Chromium et dans Electron (Playwright).
+Les modules Web Audio et DOM restent fins. `npm run test:e2e` lance la vraie
+application Electron (Playwright, micro simulé) pour vérifier l'enregistrement :
+calage à l'échantillon, prise au micro, autorisations.
 
 ## Évolutions prévues
 
@@ -126,7 +131,7 @@ dans Chromium et dans Electron (Playwright).
 | ----- | ------------------------------ | ------------------------------------------------------------------------------------- |
 | 1     | Déplacer et découper les clips | Modèle `Clip` séparé de `Track`, `start(when, offset, duration)`                      |
 | 2     | Sauvegarde de projet           | JSON (pistes, réglages vocaux, tonalité) + fichiers audio dans un dossier `.bandloop` |
-| 3     | Enregistrement micro           | `getUserMedia` + AudioWorklet d'enregistrement, compensation de latence               |
+| 3     | Punch-in et prises en boucle   | Remplacement d'un passage, plusieurs prises par piste (modèle `Clip`)                 |
 | 4     | Correction en direct           | YIN + PSOLA dans un AudioWorklet (les briques `dsp/` sont déjà sans DOM)              |
 | 5     | Export / mixdown               | `OfflineAudioContext` → WAV                                                           |
 | 6     | Import / export de presets     | Fichier `.blpreset` (JSON validé par `normalizeSettings`)                             |

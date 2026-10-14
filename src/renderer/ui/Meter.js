@@ -6,8 +6,9 @@ const FALL_PER_FRAME = 0.018; // vitesse de retombée de l'affichage
 const HOLD_FRAMES = 45; // durée de maintien de la crête (~0,75 s)
 
 export class Meter {
-  constructor(container) {
-    this.channels = ['G', 'D'].map((label) => {
+  /** @param {string[]} [labels]  un libellé par canal (['G', 'D'] par défaut) */
+  constructor(container, labels = ['G', 'D']) {
+    this.channels = labels.map((label) => {
       const fill = h('div', { className: 'meter-fill' });
       const hold = h('div', { className: 'meter-hold' });
       container.append(
@@ -24,6 +25,7 @@ export class Meter {
 
   /** @param {number[]} peaks  Niveaux crête linéaires (0..1+) par canal */
   update(peaks) {
+    if (typeof peaks === 'number') peaks = [peaks];
     this.channels.forEach((ch, i) => {
       const target = meterLevel(peaks[i] ?? 0);
       ch.level = Math.max(target, ch.level - FALL_PER_FRAME);
