@@ -4,43 +4,93 @@
     <meta charset="utf-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; media-src 'self' blob:; worker-src 'self' blob:"
     />
     <title>Bandloop</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header class="toolbar">
-      <div class="transport">
-        <button id="btn-stop" class="transport-btn" title="Stop (Entrée)" aria-label="Stop">■</button>
-        <button id="btn-play" class="transport-btn play" title="Lecture / pause (Espace)" aria-label="Lecture">
-          ▶
-        </button>
-        <output id="time-display" class="time-display">0:00.000</output>
+    <header class="topbar">
+      <div class="brand">
+        <span id="logo" class="logo"></span>
+        <span class="wordmark">bandloop</span>
+        <span class="brand-sep" aria-hidden="true"></span>
+        <input
+          id="project-name"
+          class="project-name"
+          value="Projet sans titre"
+          aria-label="Nom du projet"
+          spellcheck="false"
+        />
       </div>
-      <div class="toolbar-right">
-        <label class="zoom">
-          Zoom
-          <input id="zoom" type="range" min="10" max="400" value="50" />
-        </label>
-        <button id="btn-import" class="primary">Importer des pistes…</button>
+
+      <div class="transport" role="group" aria-label="Transport">
+        <button
+          id="btn-start"
+          class="t-btn"
+          data-icon="toStart"
+          title="Retour au début (Début)"
+          aria-label="Retour au début"
+        ></button>
+        <button id="btn-stop" class="t-btn" data-icon="stop" title="Stop (Entrée)" aria-label="Stop"></button>
+        <button
+          id="btn-play"
+          class="t-btn t-play"
+          data-icon="play"
+          title="Lecture / pause (Espace)"
+          aria-label="Lecture"
+        ></button>
+        <div class="clock">
+          <output id="time-display" class="clock-time">0:00.000</output>
+          <span id="time-total" class="clock-total">/ 0:00.000</span>
+        </div>
+        <div id="meter" class="meter" title="Niveau de sortie"></div>
+      </div>
+
+      <div class="topbar-right">
+        <div class="zoom" role="group" aria-label="Zoom">
+          <button id="zoom-out" class="icon-btn" data-icon="minus" title="Dézoomer" aria-label="Dézoomer"></button>
+          <input id="zoom" type="range" min="10" max="400" value="50" aria-label="Zoom" />
+          <button id="zoom-in" class="icon-btn" data-icon="plus" title="Zoomer" aria-label="Zoomer"></button>
+        </div>
+        <button id="btn-import" class="btn btn-primary" data-icon="import">Importer</button>
+        <button
+          id="btn-fx-toggle"
+          class="btn btn-ghost"
+          data-icon="sliders"
+          aria-pressed="false"
+          title="Panneau d'effets vocaux"
+        >
+          Effets
+        </button>
         <input id="file-input" type="file" accept="audio/*" multiple hidden />
       </div>
     </header>
 
-    <main id="workspace" class="workspace">
-      <aside id="track-headers" class="track-headers"></aside>
-      <section id="timeline" class="timeline">
-        <canvas id="timeline-canvas"></canvas>
-        <div class="timeline-spacer"></div>
-      </section>
-      <div id="empty-state" class="empty-state">
-        <p>Glisse des fichiers audio ici</p>
-        <p class="hint">ou clique sur « Importer des pistes… » (WAV, MP3, OGG, FLAC, M4A)</p>
-      </div>
-    </main>
+    <div class="body">
+      <main id="workspace" class="workspace">
+        <aside id="track-panel" class="track-panel" aria-label="Pistes"></aside>
+        <section id="timeline" class="timeline" aria-label="Timeline">
+          <canvas id="timeline-canvas"></canvas>
+          <div class="timeline-spacer"></div>
+        </section>
+        <div id="empty-state" class="empty-state">
+          <div class="empty-card">
+            <span id="empty-logo" class="empty-logo"></span>
+            <h1>Commence ton morceau</h1>
+            <p>Glisse des fichiers audio dans la fenêtre ou importe-les.</p>
+            <button id="btn-import-empty" class="btn btn-primary" data-icon="import">Importer des pistes</button>
+            <p class="hint">WAV · MP3 · OGG · FLAC · M4A — <kbd>Espace</kbd> lecture, <kbd>Entrée</kbd> stop</p>
+          </div>
+        </div>
+      </main>
+      <aside id="fx-panel" class="fx-panel" aria-label="Effets vocaux" hidden></aside>
+    </div>
 
-    <div id="status" class="status" role="status" aria-live="polite"></div>
+    <footer class="statusbar">
+      <span id="status" role="status" aria-live="polite"></span>
+      <span id="status-info" class="status-info"></span>
+    </footer>
 
     <script type="module" src="app.js"></script>
   </body>

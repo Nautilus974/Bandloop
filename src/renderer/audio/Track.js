@@ -1,9 +1,15 @@
-// Une piste : un clip audio décodé, son nœud de gain et la source en cours de lecture.
+// Une piste : un clip audio décodé et sa tranche de console.
+//
+//   source → input → [insert : effets, branché par setInsert] → panner → fader → master
+//
+// Le fader applique volume, mute et solo (calculé par le moteur, qui connaît
+// l'état solo des autres pistes).
 import { PEAKS_PER_SECOND, computePeaks } from './peaks.js';
-import { computeSourceSchedule, dbToGain } from './scheduling.js';
+import { computeSourceSchedule } from './scheduling.js';
+import { clamp } from './scheduling.js';
 
-// Lissage des changements de volume pour éviter les clics.
-const GAIN_SMOOTHING = 0.015;
+// Lissage des changements de gain / pan pour éviter les clics.
+const SMOOTHING = 0.015;
 
 let nextId = 1;
 
@@ -17,14 +23,22 @@ export class Track {
     this.id = nextId++;
     this.ctx = ctx;
     this.name = name;
-    this.buffer = buffer;
+    this.buffer = buffer; // audio original, tel qu'importé
+    this.playbackBuffer = buffer; // audio lu (peut être remplacé par un rendu traité)
     this.color = color;
     this.startTime = 0; // position du clip sur la timeline (s)
     this.volumeDb = 0;
+    this.pan = 0;
     this.muted = false;
+    this.solo = false;
 
-    this.gain = ctx.createGain();
-    this.gain.connect(destination);
+    this.input = ctx.createGain();
+    this.panner = ctx.createStereoPanner();
+    this.fader = ctx.createGain();
+    this.input.connect(this.panner);
+    this.panner.connect(this.fader);
+    this.fader.connect(destination);
+    this.insert = null;
     this.source = null;
 
     const channels = [];
@@ -43,19 +57,30 @@ export class Track {
     return this.startTime + this.duration;
   }
 
-  setVolumeDb(db) {
-    this.volumeDb = db;
-    this.#applyGain();
+  /** Applique un gain calculé par le moteur (volume × mute × solo). */
+  applyGain(gain) {
+    this.fader.gain.setTargetAtTime(gain, this.ctx.currentTime, SMOOTHING);
   }
 
-  setMuted(muted) {
-    this.muted = muted;
-    this.#applyGain();
+  setPan(pan) {
+    this.pan = clamp(pan, -1, 1);
+    this.panner.pan.setTargetAtTime(this.pan, this.ctx.currentTime, SMOOTHING);
   }
 
-  #applyGain() {
-    const target = this.muted ? 0 : dbToGain(this.volumeDb);
-    this.gain.gain.setTargetAtTime(target, this.ctx.currentTime, GAIN_SMOOTHING);
+  /**
+   * Branche une chaîne d'effets entre l'entrée et le panoramique.
+   * @param {{input: AudioNode, output: AudioNode} | null} insert
+   */
+  setInsert(insert) {
+    this.input.disconnect();
+    if (this.insert) this.insert.output.disconnect();
+    this.insert = insert;
+    if (insert) {
+      this.input.connect(insert.input);
+      insert.output.connect(this.panner);
+    } else {
+      this.input.connect(this.panner);
+    }
   }
 
   /** Programme la lecture : à l'instant `when`, la tête de lecture est à `playhead`. */
@@ -70,8 +95,8 @@ export class Track {
     if (!plan) return;
     // Une AudioBufferSourceNode ne sert qu'une fois : on en recrée une à chaque lecture.
     const source = this.ctx.createBufferSource();
-    source.buffer = this.buffer;
-    source.connect(this.gain);
+    source.buffer = this.playbackBuffer;
+    source.connect(this.input);
     source.start(plan.when, plan.offset);
     this.source = source;
   }
@@ -89,6 +114,8 @@ export class Track {
 
   dispose() {
     this.stop();
-    this.gain.disconnect();
+    this.input.disconnect();
+    this.panner.disconnect();
+    this.fader.disconnect();
   }
 }
