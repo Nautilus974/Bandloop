@@ -4,6 +4,7 @@ import { PresetStore } from './presets/PresetStore.js';
 import { createPresetStorage } from './presets/storage.js';
 import { Recorder } from './record/Recorder.js';
 import { svg } from './ui/dom.js';
+import { AddTrackMenu } from './ui/AddTrackMenu.js';
 import { FxPanel } from './ui/FxPanel.js';
 import { icons, logo } from './ui/icons.js';
 import { Meter } from './ui/Meter.js';
@@ -59,7 +60,14 @@ const ui = {
   notify: (message, isError) => setStatus(message, isError),
   getLiveTake: () => recorder.liveTake,
   isRecording: () => recorder.state === 'recording' || recorder.state === 'finishing',
+  openAddMenu: (anchor) => addTrackMenu.toggle(anchor),
 };
+
+const addTrackMenu = new AddTrackMenu({
+  // Ouvre le panneau d'enregistrement : choix du micro, niveau, puis « Enregistrer ».
+  record: () => setRecordPanelOpen(true),
+  importFile: () => openImportDialog(),
+});
 
 const timeline = new Timeline($('#timeline'), engine, ui);
 const trackPanel = new TrackPanel($('#track-panel'), engine, ui);
@@ -205,6 +213,14 @@ const isTextField = (el) =>
 
 window.addEventListener('keydown', (e) => {
   if (isTextField(e.target)) return;
+  // Entrée active le bouton qui a le focus (accessibilité clavier) ; dans un menu ou
+  // une boîte de dialogue, Entrée et Espace gardent leur rôle natif.
+  const inPopup = e.target instanceof Element && e.target.closest('.menu, dialog');
+  if (
+    (e.code === 'Enter' && e.target instanceof HTMLButtonElement) ||
+    (inPopup && (e.code === 'Enter' || e.code === 'Space'))
+  )
+    return;
   if (e.code === 'Space') {
     e.preventDefault();
     togglePlay();

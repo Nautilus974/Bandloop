@@ -55,6 +55,24 @@ export class TrackPanel extends EventTarget {
             ),
           )
         : null,
+      // Rangée « + » sous la dernière piste : ajoute une piste (prise micro ou fichier).
+      h(
+        'div',
+        { className: 'add-track' },
+        h(
+          'button',
+          {
+            className: 'add-track-btn',
+            title: 'Ajouter une piste',
+            'aria-label': 'Ajouter une piste',
+            'aria-haspopup': 'menu',
+            'aria-expanded': 'false',
+            disabled: this.ui.isRecording?.() ?? false,
+            onclick: (e) => this.ui.openAddMenu?.(e.currentTarget),
+          },
+          svg(icons.plus),
+        ),
+      ),
     ];
     this.container.replaceChildren(...children.filter(Boolean));
   }
