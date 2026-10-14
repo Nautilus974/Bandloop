@@ -4,9 +4,10 @@
 // "spacer" donne la largeur scrollable et on dessine en tenant compte de scrollLeft.
 // Les formes d'onde sont rendues dans un canvas hors-écran, ré-utilisé à chaque
 // image ; seule la tête de lecture est redessinée pendant la lecture.
+import { laneAt, snapCandidates, snapStart } from '../audio/arrange.js';
 import { peakRange } from '../audio/peaks.js';
 import { RULER_HEIGHT, TRACK_HEIGHT } from './layout.js';
-import { formatRulerLabel, rulerStep } from './time.js';
+import { formatRulerLabel, formatTime, rulerStep } from './time.js';
 
 // Doit rester cohérent avec les variables CSS de styles.css.
 const COLORS = {
@@ -23,6 +24,8 @@ const COLORS = {
 const REC_COLOR = '#ff4d6d';
 const CLIP_PAD = 6;
 const CLIP_HEADER = 18;
+const DRAG_THRESHOLD = 4; // pixels avant qu'un clic devienne un glisser
+const SNAP_PIXELS = 8; // distance d'aimantation
 
 export class Timeline {
   /**
@@ -44,6 +47,11 @@ export class Timeline {
     scroller.addEventListener('scroll', () => this.invalidate());
     new ResizeObserver(() => this.invalidate()).observe(scroller);
     this.canvas.addEventListener('pointerdown', (e) => this.#onPointerDown(e));
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (this.drag) return;
+      this.canvas.style.cursor = !this.engine.locked && this.#clipAt(e) ? 'grab' : '';
+    });
+    this.drag = null; // { id, start, snappedTo } pendant un déplacement de clip
   }
 
   setZoom(pixelsPerSecond) {
@@ -90,6 +98,37 @@ export class Timeline {
     g.lineTo(x, RULER_HEIGHT - 4);
     g.lineTo(x + 6, 18);
     g.fill();
+    if (this.drag?.moved) this.#drawDragOverlay(g, height);
+  }
+
+  /** Repère d'aimantation et position du clip déplacé. */
+  #drawDragOverlay(g, height) {
+    const { drag } = this;
+    const scrollLeft = this.scroller.scrollLeft;
+    if (drag.snappedTo !== null) {
+      const sx = Math.round(drag.snappedTo * this.pixelsPerSecond - scrollLeft) + 0.5;
+      g.strokeStyle = '#2fd4b5';
+      g.setLineDash([4, 3]);
+      g.beginPath();
+      g.moveTo(sx, RULER_HEIGHT);
+      g.lineTo(sx, height);
+      g.stroke();
+      g.setLineDash([]);
+    }
+    const index = this.engine.tracks.findIndex((t) => t.id === drag.id);
+    if (index < 0) return;
+    const label = formatTime(drag.start);
+    g.font = '600 11px "JetBrains Mono", monospace';
+    const w = g.measureText(label).width + 12;
+    const lx = Math.max(4, drag.start * this.pixelsPerSecond - scrollLeft);
+    const ly = RULER_HEIGHT + index * TRACK_HEIGHT - 22;
+    g.fillStyle = '#eaedf2';
+    g.beginPath();
+    g.roundRect(lx, Math.max(RULER_HEIGHT + 2, ly), w, 18, 5);
+    g.fill();
+    g.fillStyle = '#0a0c0f';
+    g.textBaseline = 'middle';
+    g.fillText(label, lx + 6, Math.max(RULER_HEIGHT + 2, ly) + 9.5);
   }
 
   /** Fait défiler la vue pour garder la tête de lecture visible pendant la lecture. */
@@ -191,7 +230,8 @@ export class Timeline {
   #drawClip(g, track, laneTop, viewWidth) {
     const pps = this.pixelsPerSecond;
     const scrollLeft = this.scroller.scrollLeft;
-    const clipX = track.startTime * pps - scrollLeft;
+    const start = this.drag?.id === track.id ? this.drag.start : track.startTime;
+    const clipX = start * pps - scrollLeft;
     const clipW = track.duration * pps;
     const x0 = Math.max(-4, clipX);
     const x1 = Math.min(viewWidth + 4, clipX + clipW);
@@ -257,18 +297,36 @@ export class Timeline {
     g.restore();
   }
 
-  #onPointerDown(e) {
+  /** Clip sous le pointeur, ou null. */
+  #clipAt(e) {
     const rect = this.canvas.getBoundingClientRect();
-    // Clic dans une piste : la sélectionner.
+    const y = e.clientY - rect.top - RULER_HEIGHT;
+    if (y < 0) return null;
+    const index = Math.floor(y / TRACK_HEIGHT);
+    const track = this.engine.tracks[index];
+    if (!track) return null;
+    const yIn = y - index * TRACK_HEIGHT;
+    const t = (e.clientX - rect.left + this.scroller.scrollLeft) / this.pixelsPerSecond;
+    const inside = t >= track.startTime && t <= track.end && yIn >= CLIP_PAD && yIn <= TRACK_HEIGHT - CLIP_PAD;
+    return inside ? { track, index } : null;
+  }
+
+  #onPointerDown(e) {
+    if (e.button !== 0) return;
+    const rect = this.canvas.getBoundingClientRect();
+    const seekAt = (clientX) => {
+      const x = clientX - rect.left + this.scroller.scrollLeft;
+      this.engine.seek(x / this.pixelsPerSecond);
+    };
+    const hit = this.engine.locked ? null : this.#clipAt(e);
+    if (hit) return this.#startClipDrag(e, hit, seekAt);
+
+    // Clic dans une piste (hors clip) ou dans la règle : sélection + tête de lecture.
     const y = e.clientY - rect.top - RULER_HEIGHT;
     if (y >= 0) {
       const track = this.engine.tracks[Math.floor(y / TRACK_HEIGHT)];
       if (track) this.ui.select(track.id);
     }
-    const seekAt = (clientX) => {
-      const x = clientX - rect.left + this.scroller.scrollLeft;
-      this.engine.seek(x / this.pixelsPerSecond);
-    };
     seekAt(e.clientX);
     // Glisser pour faire défiler la tête de lecture.
     const move = (ev) => seekAt(ev.clientX);
@@ -278,5 +336,64 @@ export class Timeline {
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+  }
+
+  /**
+   * Glisser un clip : horizontalement il change de position dans le temps
+   * (aimanté sur 0, la tête, les autres clips et la grille ; Maj = libre),
+   * verticalement la piste change de place dans la liste.
+   * Un simple clic sans mouvement sélectionne la piste et place la tête.
+   */
+  #startClipDrag(e, { track }, seekAt) {
+    const rect = this.canvas.getBoundingClientRect();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const origin = track.startTime;
+    this.ui.select(track.id);
+    this.drag = { id: track.id, start: origin, snappedTo: null, moved: false };
+    this.canvas.setPointerCapture(e.pointerId);
+
+    const move = (ev) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!this.drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      this.drag.moved = true;
+      this.canvas.style.cursor = 'grabbing';
+      const pps = this.pixelsPerSecond;
+      const raw = origin + dx / pps;
+      if (ev.shiftKey) {
+        Object.assign(this.drag, { start: Math.max(0, raw), snappedTo: null });
+      } else {
+        const others = this.engine.tracks
+          .filter((t) => t.id !== track.id)
+          .map((t) => ({ start: t.startTime, end: t.end }));
+        const candidates = snapCandidates({
+          position: this.engine.position,
+          otherClips: others,
+          gridStep: rulerStep(pps),
+          near: raw,
+        });
+        const snapped = snapStart(raw, track.duration, candidates, SNAP_PIXELS / pps);
+        Object.assign(this.drag, { start: snapped.time, snappedTo: snapped.snappedTo });
+      }
+      // Changement de piste en direct (haut / bas).
+      const lane = laneAt(ev.clientY - rect.top - RULER_HEIGHT, TRACK_HEIGHT, this.engine.tracks.length);
+      this.engine.moveTrack(track.id, lane);
+      this.invalidate();
+    };
+    const up = (ev) => {
+      this.canvas.removeEventListener('pointermove', move);
+      this.canvas.removeEventListener('pointerup', up);
+      this.canvas.removeEventListener('pointercancel', up);
+      const { moved, start } = this.drag;
+      this.drag = null;
+      this.canvas.style.cursor = '';
+      if (moved) this.engine.setTrackStart(track.id, start);
+      else seekAt(ev.clientX);
+      this.invalidate();
+    };
+    this.canvas.addEventListener('pointermove', move);
+    this.canvas.addEventListener('pointerup', up);
+    this.canvas.addEventListener('pointercancel', up);
   }
 }

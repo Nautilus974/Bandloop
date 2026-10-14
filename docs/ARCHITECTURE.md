@@ -15,6 +15,7 @@
 ┌──────────────┴───────── Renderer (Chromium, sans accès Node) ────────────────┐
 │ app.js                  relie moteur, moteur vocal, presets et interface     │
 │ audio/                  AudioEngine (transport, master, limiteur, VU),       │
+│                         arrange (ordre des pistes, aimantation des clips),   │
 │                         Track (tranche de console), mixage, pics, planif.    │
 │ vocal/                  moteur vocal — voir MOTEUR-VOCAL.md                  │
 │   settings.js           schéma des réglages, validation                      │
@@ -112,7 +113,7 @@ les calculs lourds et un AudioWorklet pour le bitcrush.
 
 ## Tests
 
-`npm test` lance `node:test` (75 tests) sur toute la logique pure :
+`npm test` lance `node:test` (81 tests) sur toute la logique pure :
 
 - transport et mixage ;
 - théorie musicale, détection de hauteur, correction, PSOLA et rendu vocal
@@ -123,15 +124,16 @@ les calculs lourds et un AudioWorklet pour le bitcrush.
 
 Les modules Web Audio et DOM restent fins. `npm run test:e2e` lance la vraie
 application Electron (Playwright, micro simulé) pour vérifier l'enregistrement :
-calage à l'échantillon, prise au micro, autorisations.
+calage à l'échantillon, prise au micro, autorisations, et déplacement des pistes
+à la souris et au clavier.
 
 ## Évolutions prévues
 
-| Étape | Sujet                          | Piste technique                                                                       |
-| ----- | ------------------------------ | ------------------------------------------------------------------------------------- |
-| 1     | Déplacer et découper les clips | Modèle `Clip` séparé de `Track`, `start(when, offset, duration)`                      |
-| 2     | Sauvegarde de projet           | JSON (pistes, réglages vocaux, tonalité) + fichiers audio dans un dossier `.bandloop` |
-| 3     | Punch-in et prises en boucle   | Remplacement d'un passage, plusieurs prises par piste (modèle `Clip`)                 |
-| 4     | Correction en direct           | YIN + PSOLA dans un AudioWorklet (les briques `dsp/` sont déjà sans DOM)              |
-| 5     | Export / mixdown               | `OfflineAudioContext` → WAV                                                           |
-| 6     | Import / export de presets     | Fichier `.blpreset` (JSON validé par `normalizeSettings`)                             |
+| Étape | Sujet                        | Piste technique                                                                       |
+| ----- | ---------------------------- | ------------------------------------------------------------------------------------- |
+| 1     | Découper les clips, annuler  | Modèle `Clip` séparé de `Track`, `start(when, offset, duration)` ; pile d'annulation  |
+| 2     | Sauvegarde de projet         | JSON (pistes, réglages vocaux, tonalité) + fichiers audio dans un dossier `.bandloop` |
+| 3     | Punch-in et prises en boucle | Remplacement d'un passage, plusieurs prises par piste (modèle `Clip`)                 |
+| 4     | Correction en direct         | YIN + PSOLA dans un AudioWorklet (les briques `dsp/` sont déjà sans DOM)              |
+| 5     | Export / mixdown             | `OfflineAudioContext` → WAV                                                           |
+| 6     | Import / export de presets   | Fichier `.blpreset` (JSON validé par `normalizeSettings`)                             |

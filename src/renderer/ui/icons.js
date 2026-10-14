@@ -35,6 +35,10 @@ export const icons = {
     '<path d="M5 3.5h8.5L16.5 6.5V15a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 15V5A1.5 1.5 0 0 1 5 3.5z"/><path d="M7 3.5V7h5V3.5M6.5 16.5v-5h7v5"/>',
   ),
   reset: icon('<path d="M4 10a6 6 0 1 0 1.8-4.3"/><path d="M4 4.5v3h3"/>'),
+  grip: icon(
+    '<circle cx="7.5" cy="5" r="1.3"/><circle cx="12.5" cy="5" r="1.3"/><circle cx="7.5" cy="10" r="1.3"/><circle cx="12.5" cy="10" r="1.3"/><circle cx="7.5" cy="15" r="1.3"/><circle cx="12.5" cy="15" r="1.3"/>',
+    { fill: true },
+  ),
   power: icon('<path d="M10 3.5V10"/><path d="M6.2 5.8a6 6 0 1 0 7.6 0"/>'),
 };
 

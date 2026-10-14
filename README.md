@@ -14,6 +14,10 @@ vocaux et des presets. Construit avec **Electron** et la **Web Audio API**.
   rebours, pistes existantes jouées en guide, prise calée à l'échantillon avec
   compensation (et mesure) de la latence. La prise devient une piste normale,
   avec presets et effets vocaux appliqués après coup.
+- **Arrangement** : glisser un clip à gauche ou à droite pour le déplacer dans le
+  temps (aimanté sur 0, la tête de lecture, les autres clips et la grille ;
+  Maj pour un placement libre), en haut ou en bas pour changer la piste de
+  place ; poignée ⠿ sur chaque piste ; bouton « + » sous la dernière piste.
 - **Console** : volume en dB, panoramique, mute et solo par piste, VU-mètre
   stéréo et limiteur sur le master.
 - **Moteur vocal** :
@@ -50,14 +54,14 @@ morceau** (ici La mineur, c'est-à-dire `La` + `Mineur naturel`).
 
 ## Scripts
 
-| Commande           | Rôle                                                                                                                |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `npm start`        | Lance l'app en développement                                                                                        |
-| `npm test`         | Tests unitaires (`node:test`, sans Electron)                                                                        |
-| `npm run test:e2e` | Tests de bout en bout dans l'app Electron (enregistrement) ; sous Linux sans écran : `xvfb-run -a npm run test:e2e` |
-| `npm run samples`  | Génère des WAV de démo                                                                                              |
-| `npm run dist:mac` | Construit un `.dmg` (à lancer sur un Mac)                                                                           |
-| `npm run dist:win` | Construit un installeur `.exe` (NSIS)                                                                               |
+| Commande           | Rôle                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm start`        | Lance l'app en développement                                                                                                                |
+| `npm test`         | Tests unitaires (`node:test`, sans Electron)                                                                                                |
+| `npm run test:e2e` | Tests de bout en bout dans l'app Electron (enregistrement, déplacement des pistes) ; sous Linux sans écran : `xvfb-run -a npm run test:e2e` |
+| `npm run samples`  | Génère des WAV de démo                                                                                                                      |
+| `npm run dist:mac` | Construit un `.dmg` (à lancer sur un Mac)                                                                                                   |
+| `npm run dist:win` | Construit un installeur `.exe` (NSIS)                                                                                                       |
 
 ## Documentation
 

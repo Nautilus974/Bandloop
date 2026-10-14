@@ -2,6 +2,7 @@
 //
 // Toutes les pistes sont démarrées sur la même horloge (AudioContext.currentTime)
 // avec une petite avance, ce qui garantit une synchronisation à l'échantillon près.
+import { reorder } from './arrange.js';
 import { effectiveGain } from './mixing.js';
 import { Track } from './Track.js';
 import { clamp } from './scheduling.js';
@@ -92,6 +93,26 @@ export class AudioEngine extends EventTarget {
     this.updateGains();
     if (this.tracks.length === 0) this.stop();
     this.#emit('tracks');
+  }
+
+  /** Change l'ordre des pistes (haut/bas). */
+  moveTrack(id, toIndex) {
+    if (this.locked) return;
+    const from = this.tracks.findIndex((t) => t.id === id);
+    if (from < 0 || from === toIndex) return;
+    this.tracks = reorder(this.tracks, from, toIndex);
+    this.#emit('tracks');
+  }
+
+  /** Déplace le clip d'une piste dans le temps (gauche/droite). */
+  setTrackStart(id, startTime) {
+    if (this.locked) return;
+    const track = this.getTrack(id);
+    if (!track) return;
+    track.startTime = Math.max(0, startTime);
+    // En lecture, seule cette piste est relancée à la bonne position.
+    if (this.state === 'playing') track.start(this.ctx.currentTime, this.position);
+    this.#emit('arrange', { id });
   }
 
   getTrack(id) {
@@ -212,7 +233,7 @@ export class AudioEngine extends EventTarget {
     this.#emit('state');
   }
 
-  #emit(type) {
-    this.dispatchEvent(new Event(type));
+  #emit(type, detail = {}) {
+    this.dispatchEvent(new CustomEvent(type, { detail }));
   }
 }

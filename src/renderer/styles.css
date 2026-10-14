@@ -1868,6 +1868,51 @@ body.is-recording .transport {
   gap: 8px;
 }
 
+/* ---------- Déplacement des pistes ---------- */
+
+.track-grip {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 22px;
+  margin-left: -6px;
+  border-radius: 4px;
+  color: var(--text-3);
+  opacity: 0;
+  cursor: grab;
+  touch-action: none;
+  transition: opacity 0.15s;
+}
+
+.track-grip .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.track:hover .track-grip,
+.track.selected .track-grip,
+.track.dragging .track-grip {
+  opacity: 1;
+}
+
+.track-grip:hover {
+  color: var(--text);
+  background: var(--bg-4);
+}
+
+.track.dragging {
+  background: var(--bg-4);
+  box-shadow:
+    inset 0 0 0 1px var(--accent),
+    0 6px 18px rgb(0 0 0 / 45%);
+}
+
+body.reordering,
+body.reordering * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+
 /* ---------- Ajout de piste ---------- */
 
 .add-track {

@@ -233,6 +233,18 @@ window.addEventListener('keydown', (e) => {
   } else if (e.code === 'Escape') {
     if (recorder.state === 'countdown') recorder.stop();
     else if (recordPanel.isOpen && !document.querySelector('dialog[open]')) setRecordPanelOpen(false);
+  } else if (e.altKey && e.code.startsWith('Arrow') && !(e.target instanceof HTMLInputElement) && selectedId !== null) {
+    // Alt+↑/↓ : changer la piste de place ; Alt+←/→ : décaler son clip (Maj : par seconde).
+    e.preventDefault();
+    const track = engine.getTrack(selectedId);
+    if (!track || engine.locked) return;
+    const index = engine.tracks.indexOf(track);
+    if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+      engine.moveTrack(track.id, index + (e.code === 'ArrowUp' ? -1 : 1));
+    } else {
+      const step = (e.shiftKey ? 1 : 0.1) * (e.code === 'ArrowLeft' ? -1 : 1);
+      engine.setTrackStart(track.id, track.startTime + step);
+    }
   } else if (e.code === 'Home') {
     e.preventDefault();
     engine.seek(0);
@@ -265,6 +277,14 @@ engine.addEventListener('tracks', () => {
   fxPanel.render();
   updateInfo();
   $('#empty-state').hidden = engine.tracks.length > 0;
+});
+
+// Clip déplacé dans le temps : la durée du projet et l'affichage changent.
+engine.addEventListener('arrange', ({ detail }) => {
+  timeline.invalidate();
+  updateInfo();
+  const track = engine.getTrack(detail.id);
+  if (track) setStatus(`${track.name} commence à ${formatTime(track.startTime)}.`);
 });
 
 engine.addEventListener('mix', () => {

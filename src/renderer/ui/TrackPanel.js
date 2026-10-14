@@ -1,5 +1,6 @@
 // Panneau de pistes (colonne de gauche) : une tranche par piste avec
 // volume, panoramique, mute, solo, accès aux effets et suppression.
+import { laneAt } from '../audio/arrange.js';
 import { formatPan } from '../audio/mixing.js';
 import { MAX_DB, MIN_DB } from '../audio/scheduling.js';
 import { h, svg } from './dom.js';
@@ -25,6 +26,35 @@ export class TrackPanel extends EventTarget {
     this.ui = ui;
     container.style.setProperty('--ruler-height', `${RULER_HEIGHT}px`);
     container.style.setProperty('--track-height', `${TRACK_HEIGHT}px`);
+    this.draggingId = null;
+  }
+
+  /** Glisser la poignée d'une piste pour la changer de place (haut / bas). */
+  #startReorder(e, track) {
+    if (e.button !== 0 || this.engine.locked) return;
+    e.preventDefault();
+    this.draggingId = track.id;
+    document.body.classList.add('reordering');
+    this.render();
+    this.refresh();
+    const move = (ev) => {
+      const first = this.container.querySelector('.track[data-track-id]');
+      if (!first) return;
+      const lane = laneAt(ev.clientY - first.getBoundingClientRect().top, TRACK_HEIGHT, this.engine.tracks.length);
+      this.engine.moveTrack(track.id, lane);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointercancel', up);
+      document.body.classList.remove('reordering');
+      this.draggingId = null;
+      this.render();
+      this.refresh();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
   }
 
   render() {
@@ -141,7 +171,7 @@ export class TrackPanel extends EventTarget {
     const el = h(
       'div',
       {
-        className: `track${selected ? ' selected' : ''}`,
+        className: `track${selected ? ' selected' : ''}${this.draggingId === track.id ? ' dragging' : ''}`,
         dataset: { trackId: String(track.id) },
         style: { '--track-color': track.color },
         onpointerdown: () => this.ui.select(track.id),
@@ -153,6 +183,16 @@ export class TrackPanel extends EventTarget {
         h(
           'div',
           { className: 'track-top' },
+          h(
+            'span',
+            {
+              className: 'track-grip',
+              title: 'Glisser pour déplacer la piste (ou Alt+↑ / Alt+↓)',
+              'aria-label': `Déplacer ${track.name}`,
+              onpointerdown: (e) => this.#startReorder(e, track),
+            },
+            svg(icons.grip),
+          ),
           h('span', { className: 'track-index' }, String(index + 1).padStart(2, '0')),
           h('span', { className: 'track-name', title: track.name }, track.name),
           h(
