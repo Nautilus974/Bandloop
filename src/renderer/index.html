@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:"
+    />
+    <title>Bandloop</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <div class="transport">
+        <button id="btn-stop" class="transport-btn" title="Stop (Entrée)" aria-label="Stop">■</button>
+        <button id="btn-play" class="transport-btn play" title="Lecture / pause (Espace)" aria-label="Lecture">
+          ▶
+        </button>
+        <output id="time-display" class="time-display">0:00.000</output>
+      </div>
+      <div class="toolbar-right">
+        <label class="zoom">
+          Zoom
+          <input id="zoom" type="range" min="10" max="400" value="50" />
+        </label>
+        <button id="btn-import" class="primary">Importer des pistes…</button>
+        <input id="file-input" type="file" accept="audio/*" multiple hidden />
+      </div>
+    </header>
+
+    <main id="workspace" class="workspace">
+      <aside id="track-headers" class="track-headers"></aside>
+      <section id="timeline" class="timeline">
+        <canvas id="timeline-canvas"></canvas>
+        <div class="timeline-spacer"></div>
+      </section>
+      <div id="empty-state" class="empty-state">
+        <p>Glisse des fichiers audio ici</p>
+        <p class="hint">ou clique sur « Importer des pistes… » (WAV, MP3, OGG, FLAC, M4A)</p>
+      </div>
+    </main>
+
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
