@@ -40,6 +40,17 @@ async function quit() {
 const menu = (id) => app.evaluate(({ Menu }, itemId) => Menu.getApplicationMenu().getMenuItemById(itemId).click(), id);
 
 /**
+ * Annuler / rétablir par le menu natif, en attendant que la commande soit
+ * traitée : elle arrive à la fenêtre par IPC, de façon asynchrone.
+ */
+async function menuHistory(id) {
+  const before = await win.evaluate(() => editHistory.undoStack.length);
+  await menu(id);
+  const expected = before + (id === 'undo' ? -1 : 1);
+  await win.waitForFunction((n) => editHistory.undoStack.length === n, expected);
+}
+
+/**
  * Signal de test : chaque échantillon est (presque) unique, on peut donc dire
  * exactement de quel endroit du fichier vient chaque échantillon du rendu.
  * WAV 16 bits mono à la fréquence de la carte son (décodé sans rééchantillonnage).
@@ -267,15 +278,15 @@ test('déplacer un morceau par son en-tête (aimanté) puis le rogner par son bo
 
 test('annuler / rétablir (menu Édition et boutons) : chaque étape revient exactement', async () => {
   const final = await clips();
-  await menu('undo'); // rognage
-  await menu('undo'); // déplacement
+  await menuHistory('undo'); // rognage
+  await menuHistory('undo'); // déplacement
   const afterTwoUndos = await clips();
   assert.equal(afterTwoUndos[2].length, 4 * sr() - Math.round((removed.to - 2) * sr()));
-  await menu('undo'); // suppression
-  await menu('undo'); // découpe
+  await menuHistory('undo'); // suppression
+  await menuHistory('undo'); // découpe
   assert.deepEqual(await clips(), [{ start: 0, offset: 0, length: SECONDS * sr() }]);
   assert.equal(await win.locator('#btn-undo').isDisabled(), true);
-  for (let i = 0; i < 4; i++) await menu('redo');
+  for (let i = 0; i < 4; i++) await menuHistory('redo');
   assert.deepEqual(await clips(), final);
   assert.equal(await win.locator('#btn-redo').isDisabled(), true);
   // Boutons de la barre d'outils.
@@ -293,7 +304,12 @@ test('pendant un enregistrement, le montage est bloqué', async () => {
   await drag(p, await at(1.6, BODY));
   await win.keyboard.press('s');
   await win.keyboard.press('Delete');
+  // Annuler par le menu : attendre que la commande (IPC) soit traitée et refusée.
+  await win.evaluate(() => (document.querySelector('#status').textContent = ''));
   await menu('undo');
+  await win.waitForFunction(() =>
+    /impossible pendant un enregistrement/.test(document.querySelector('#status').textContent),
+  );
   await drag(await at(0.5, HEADER), await at(1.5, HEADER));
   assert.deepEqual(await clips(), state);
   assert.match(await win.locator('#status').innerText(), /impossible pendant un enregistrement/);

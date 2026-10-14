@@ -384,6 +384,7 @@ window.project = project;
 function syncDocument() {
   document.title = project.title;
   if (document.activeElement !== projectNameInput) projectNameInput.value = project.name;
+  projectNameInput.title = `${project.name} — clique pour renommer le projet`;
   bridge?.window?.setDocument({ title: project.title, name: project.name, edited: project.dirty, path: project.path });
 }
 project.addEventListener('change', syncDocument);

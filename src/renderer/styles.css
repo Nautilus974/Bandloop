@@ -91,6 +91,9 @@ body {
 
 body {
   display: grid;
+  /* minmax(0, 1fr) : une ligne ne peut pas élargir la fenêtre (sinon un long
+     nom de projet pousserait la barre supérieure hors de l'écran). */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr auto;
 }
 
@@ -214,8 +217,11 @@ kbd {
 /* ---------- Barre supérieure ---------- */
 
 .topbar {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  /* Trois blocs qui ne peuvent pas se chevaucher : marque + projet (gauche),
+     transport (centré tant qu'il y a la place), outils (droite). Les côtés
+     ont une base nulle et grandissent à parts égales ; aucun ne descend sous
+     la largeur de son contenu. Voir les paliers de compactage en fin de section. */
+  display: flex;
   align-items: center;
   gap: 16px;
   height: 64px;
@@ -226,9 +232,20 @@ kbd {
 
 .brand {
   display: flex;
+  flex: 1 1 0;
   align-items: center;
   gap: 10px;
+  /* Le bloc prend la place laissée par le transport et les outils ; c'est le
+     nom du projet qui cède (avec « … ») si elle manque. */
   min-width: 0;
+}
+
+.brand > * {
+  flex: none;
+}
+
+.brand > .project-name {
+  flex: 0 1 auto;
 }
 
 .logo {
@@ -249,9 +266,13 @@ kbd {
 }
 
 .project-name {
-  flex: 1 1 auto;
-  min-width: 90px;
-  max-width: 240px;
+  /* Largeur ajustée au nom ; « … » seulement au-delà de max-width (nom
+     complet en infobulle, voir syncDocument dans app.js). */
+  field-sizing: content;
+  min-width: 96px;
+  max-width: 260px;
+  overflow: hidden;
+  white-space: nowrap;
   padding: 5px 8px;
   border: 1px solid transparent;
   border-radius: var(--radius-s);
@@ -274,6 +295,7 @@ kbd {
 
 .transport {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 6px;
   padding: 6px;
@@ -409,9 +431,11 @@ kbd {
 
 .topbar-right {
   display: flex;
+  flex: 1 1 0;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;
+  min-width: max-content;
 }
 
 .edit-tools {
@@ -2315,5 +2339,110 @@ body.reordering * {
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;
+  }
+}
+
+/* ---------- Barre supérieure : compactage (en fin de fichier pour l'emporter sur les règles de base) ---------- */
+
+/* Paliers de compactage de la barre supérieure, du moins utile au plus utile :
+   durée totale, curseur de zoom raccourci (jamais masqué), mot « bandloop »
+   (le logo reste), libellé du bouton Exporter, espacements resserrés, puis
+   VU-mètre. Le nom du projet cède en dernier (« … » + infobulle). */
+@media (max-width: 1500px) {
+  .topbar {
+    gap: 12px;
+  }
+
+  .zoom input {
+    width: 52px;
+  }
+
+  .meter {
+    width: 72px;
+  }
+
+  .clock-total {
+    display: none;
+  }
+}
+
+@media (max-width: 1400px) {
+  .wordmark {
+    display: none;
+  }
+
+  .btn-export-label {
+    display: none;
+  }
+
+  #btn-export {
+    padding: 0 10px;
+  }
+
+  .meter {
+    width: 72px;
+  }
+
+  .project-name {
+    max-width: 200px;
+  }
+}
+
+@media (max-width: 1200px) {
+  .topbar {
+    gap: 10px;
+    padding: 0 12px;
+  }
+
+  .brand,
+  .topbar-right {
+    gap: 6px;
+  }
+
+  .transport {
+    gap: 4px;
+  }
+
+  .t-btn {
+    width: 34px;
+  }
+
+  .t-play {
+    width: 42px;
+  }
+
+  .clock {
+    padding: 0 10px;
+  }
+
+  .clock-time {
+    min-width: 84px;
+    font-size: 17px;
+  }
+
+  .project-name {
+    max-width: 160px;
+  }
+
+  .zoom input {
+    width: 40px;
+  }
+
+  .meter {
+    width: 60px;
+  }
+
+  .edit-tools .icon-btn,
+  .zoom .icon-btn {
+    width: 26px;
+  }
+}
+
+/* Sous la largeur minimale de la fenêtre Electron (version navigateur) :
+   VU-mètre du master et mot « BPM » masqués. */
+@media (max-width: 1080px) {
+  .meter,
+  .tempo span {
+    display: none;
   }
 }
