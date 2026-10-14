@@ -36,6 +36,7 @@ Mon morceau.bandloop
 
 - le nom, le tempo, le zoom, la position de la tête et la tonalité ;
 - pour chaque piste, dans l'ordre : nom, couleur, début sur la timeline,
+  **clips** (montage, en échantillons ; voir [MONTAGE.md](MONTAGE.md)),
   volume, panoramique, mute, solo, et l'effet vocal (preset, réglages
   complets, contournement) ;
 - les **presets personnels** utilisés. Ouvert sur une autre machine, le projet
@@ -198,8 +199,9 @@ Mesuré sur un morceau de 3 min (2 WAV stéréo, 1 MP3, 1 prise micro mono) :
 
 ### Autres
 
-- Il n'y a ni annulation (Ctrl+Z) ni enregistrement automatique pour
-  l'instant : pense à Ctrl+S.
+- Ctrl/⌘+Z annule les opérations de **montage** (voir
+  [MONTAGE.md](MONTAGE.md)), pas les réglages de mixage ni d'effets. Il n'y a
+  pas encore d'enregistrement automatique : pense à Ctrl+S.
 - Le rendu vocal (correction, harmonies…) n'est pas stocké dans le projet :
   il est **recalculé à l'ouverture** à partir des réglages, ce qui garde des
   fichiers légers mais demande quelques secondes par piste corrigée.

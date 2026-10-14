@@ -28,6 +28,15 @@ export function buildMenu() {
     {
       label: 'Édition',
       submenu: [
+        // Annuler / Rétablir agissent sur le montage ; dans un champ de texte,
+        // le renderer les renvoie à la saisie.
+        item('undo', 'Annuler', 'CmdOrCtrl+Z'),
+        item('redo', 'Rétablir', 'Shift+CmdOrCtrl+Z'),
+        { type: 'separator' },
+        // Raccourcis gérés par le renderer (ils ne doivent pas agir dans un champ de texte).
+        { ...item('split', 'Découper le clip', 'CmdOrCtrl+K'), registerAccelerator: false },
+        { ...item('delete', 'Supprimer la sélection', 'Delete'), registerAccelerator: false },
+        { type: 'separator' },
         { role: 'cut', label: 'Couper' },
         { role: 'copy', label: 'Copier' },
         { role: 'paste', label: 'Coller' },

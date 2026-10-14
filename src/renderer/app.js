@@ -1,5 +1,7 @@
 // Point d'entrée du renderer : relie le moteur audio, la timeline et les panneaux.
 import { AudioEngine } from './audio/AudioEngine.js';
+import { clipAt, clipEnd, deleteRange, splitClipRange, splitClipsAt } from './audio/clips.js';
+import { EditHistory } from './audio/history.js';
 import { ExportManager } from './export/ExportManager.js';
 import { ExportError } from './export/mixdown.js';
 import { PROJECT_EXTENSION } from './project/format.js';
@@ -39,6 +41,12 @@ const recorder = new Recorder(engine, {
   requestSystemAccess: bridge?.mic ? () => bridge.mic.requestAccess() : undefined,
 });
 
+// Annuler / rétablir : instantanés de l'arrangement (ordre des pistes, clips).
+const history = new EditHistory({
+  capture: () => engine.getArrangement(),
+  restore: (snapshot) => engine.restoreArrangement(snapshot),
+});
+
 // --- État d'interface -------------------------------------------------------
 
 let selectedId = null;
@@ -68,6 +76,13 @@ const ui = {
   getLiveTake: () => recorder.liveTake,
   isRecording: () => recorder.state === 'recording' || recorder.state === 'finishing',
   openAddMenu: (anchor) => addTrackMenu.toggle(anchor),
+  /** Opération de montage annulable (refusée pendant un enregistrement). */
+  edit(label, fn, before) {
+    if (engine.locked) return setStatus('Montage impossible pendant un enregistrement.', true);
+    history.perform(label, fn, before);
+  },
+  captureArrangement: () => history.capture(),
+  onClipSelection: () => describeSelection(),
 };
 
 const addTrackMenu = new AddTrackMenu({
@@ -92,7 +107,7 @@ const timeDisplay = $('#time-display');
 const statusEl = $('#status');
 
 // Exposé pour le débogage dans la console DevTools.
-Object.assign(window, { engine, hub, presets, recorder });
+Object.assign(window, { engine, hub, presets, recorder, timeline, editHistory: history });
 
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
@@ -253,6 +268,21 @@ window.addEventListener('keydown', (e) => {
   } else if (e.code === 'Escape') {
     if (recorder.state === 'countdown') recorder.stop();
     else if (recordPanel.isOpen && !document.querySelector('dialog[open]')) setRecordPanelOpen(false);
+    else if (timeline.selection) timeline.setSelection(null);
+  } else if (
+    (e.code === 'KeyS' && !e.metaKey && !e.ctrlKey && !e.altKey) ||
+    (e.code === 'KeyK' && (e.metaKey || e.ctrlKey) && !e.altKey)
+  ) {
+    e.preventDefault();
+    runCommand('split');
+  } else if ((e.code === 'Delete' || e.code === 'Backspace') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    e.preventDefault();
+    runCommand(e.shiftKey ? 'delete-gap' : 'delete');
+  } else if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
+    // Dans Electron, Ctrl/⌘+Z passe par le menu Édition ; Ctrl+Y (Windows) et le navigateur arrivent ici.
+    if (bridge && e.code === 'KeyZ') return;
+    e.preventDefault();
+    runCommand(e.code === 'KeyY' || e.shiftKey ? 'redo' : 'undo');
   } else if (e.altKey && e.code.startsWith('Arrow') && !(e.target instanceof HTMLInputElement) && selectedId !== null) {
     // Alt+↑/↓ : changer la piste de place ; Alt+←/→ : décaler son clip (Maj : par seconde).
     e.preventDefault();
@@ -260,10 +290,19 @@ window.addEventListener('keydown', (e) => {
     if (!track || engine.locked) return;
     const index = engine.tracks.indexOf(track);
     if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
-      engine.moveTrack(track.id, index + (e.code === 'ArrowUp' ? -1 : 1));
+      ui.edit('Déplacer la piste', () => engine.moveTrack(track.id, index + (e.code === 'ArrowUp' ? -1 : 1)));
     } else {
+      // Le clip sélectionné, ou toute la piste si aucun clip n'est sélectionné.
       const step = (e.shiftKey ? 1 : 0.1) * (e.code === 'ArrowLeft' ? -1 : 1);
-      engine.setTrackStart(track.id, track.startTime + step);
+      const sel = timeline.getSelection();
+      if (sel?.track === track) {
+        ui.edit('Déplacer le clip', () => engine.moveClip(track.id, sel.clip.id, sel.clip.start + step));
+        timeline.setSelection({ trackId: track.id, clipId: sel.clip.id });
+        setStatus(`Clip de « ${track.name} » à ${formatTime(Math.max(0, sel.clip.start + step))}.`);
+      } else {
+        ui.edit('Déplacer la piste', () => engine.setTrackStart(track.id, track.startTime + step));
+        setStatus(`${track.name} commence à ${formatTime(track.startTime)}.`);
+      }
     }
   } else if (e.code === 'Home') {
     e.preventDefault();
@@ -425,6 +464,17 @@ async function runCommand(command, payload = {}) {
     case 'export':
       openExport();
       break;
+    case 'undo':
+    case 'redo':
+      undoRedo(command);
+      break;
+    case 'split':
+      splitSelection();
+      break;
+    case 'delete':
+    case 'delete-gap':
+      deleteSelection({ ripple: command === 'delete' });
+      break;
   }
 }
 bridge?.onMenu?.(({ command, ...payload }) => runCommand(command, payload));
@@ -450,6 +500,116 @@ const fileMenu = new PopupMenu('Fichier', () => {
 $('#btn-file').addEventListener('click', (e) => fileMenu.toggle(e.currentTarget));
 $('#btn-export').addEventListener('click', openExport);
 
+// --- Montage : découper, supprimer, annuler ----------------------------------
+
+const MOD = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+
+/** Affiche la sélection dans la barre d'état (début, fin, durée). */
+function describeSelection() {
+  updateEditButtons();
+  const sel = timeline.getSelection();
+  if (!sel) return;
+  const { track, clip, range } = sel;
+  if (range) {
+    setStatus(
+      `Sélection dans « ${track.name} » : ${formatTime(range.from)} → ${formatTime(range.to)} (durée ${formatTime(range.to - range.from)}) — S découpe, Suppr supprime.`,
+    );
+  } else {
+    const end = clipEnd(clip, track.sampleRate);
+    setStatus(
+      `Clip de « ${track.name} » : ${formatTime(clip.start)} → ${formatTime(end)} (durée ${formatTime(end - clip.start)}) — S découpe à la tête, Suppr supprime.`,
+    );
+  }
+}
+
+function updateEditButtons() {
+  $('#btn-undo').disabled = !history.canUndo;
+  $('#btn-redo').disabled = !history.canRedo;
+  $('#btn-undo').title = history.canUndo ? `Annuler « ${history.undoLabel} » (${MOD}Z)` : `Annuler (${MOD}Z)`;
+  $('#btn-redo').title = history.canRedo ? `Rétablir « ${history.redoLabel} » (${MOD}⇧Z)` : `Rétablir (${MOD}⇧Z)`;
+  $('#btn-delete').disabled = !timeline.getSelection();
+}
+
+const editBlocked = () => {
+  if (!engine.locked) return false;
+  setStatus('Montage impossible pendant un enregistrement.', true);
+  return true;
+};
+
+function undoRedo(command) {
+  // Dans un champ de texte, Ctrl/⌘+Z annule la saisie, pas le montage.
+  if (isTextField(document.activeElement)) return document.execCommand(command);
+  if (editBlocked()) return;
+  const label = command === 'undo' ? history.undo() : history.redo();
+  if (!label) return setStatus(command === 'undo' ? 'Rien à annuler.' : 'Rien à rétablir.');
+  timeline.getSelection(); // oublie la sélection si le clip n'existe plus
+  setStatus(`${command === 'undo' ? 'Annulé' : 'Rétabli'} : ${label}.`);
+}
+
+/**
+ * Découpe : autour de la portion sélectionnée (elle devient un clip), sinon à la
+ * tête de lecture dans le clip sélectionné, sinon dans les clips de la piste
+ * sélectionnée qui sont sous la tête.
+ */
+function splitSelection() {
+  if (editBlocked()) return;
+  const sel = timeline.getSelection();
+  const track = sel?.track ?? engine.getTrack(selectedId);
+  if (!track) return setStatus('Sélectionne un clip ou une piste à découper.', true);
+  const sr = track.sampleRate;
+  if (sel?.range) {
+    const { clips, middleId } = splitClipRange(track.clips, sel.clip.id, sel.range.from, sel.range.to, sr);
+    ui.edit('Découper', () => engine.setClips(track.id, clips));
+    timeline.setSelection({ trackId: track.id, clipId: middleId });
+    return;
+  }
+  const at = engine.position;
+  const onlyId = sel && at > sel.clip.start && at < clipEnd(sel.clip, sr) ? sel.clip.id : null;
+  if (sel && !onlyId) return setStatus('Place la tête de lecture dans le clip sélectionné pour le découper.', true);
+  const { clips, changed } = splitClipsAt(track.clips, at, sr, onlyId);
+  if (!changed) return setStatus(`La tête de lecture n’est sur aucun clip de « ${track.name} ».`, true);
+  ui.edit('Découper', () => engine.setClips(track.id, clips));
+  const right = clipAt(track.clips, at + 0.5 / sr, sr);
+  if (right) timeline.setSelection({ trackId: track.id, clipId: right.id });
+  setStatus(`« ${track.name} » découpée à ${formatTime(at)}.`);
+}
+
+/** Supprime la portion sélectionnée (le reste se recolle, sauf avec Maj) ou le clip sélectionné. */
+function deleteSelection({ ripple }) {
+  if (editBlocked()) return;
+  const sel = timeline.getSelection();
+  if (!sel) return setStatus('Sélectionne un clip, ou glisse sur un clip pour en sélectionner une portion.', true);
+  const { track, clip, range } = sel;
+  if (range) {
+    const { clips } = deleteRange(track.clips, range.from, range.to, track.sampleRate, { ripple, onlyId: clip.id });
+    ui.edit('Supprimer la portion', () => engine.setClips(track.id, clips));
+    timeline.setSelection(null);
+    setStatus(
+      `Portion de ${formatTime(range.to - range.from)} supprimée${ripple ? ', le reste du clip s’est recollé' : ' (blanc conservé)'}.`,
+    );
+  } else {
+    ui.edit('Supprimer le clip', () =>
+      engine.setClips(
+        track.id,
+        track.clips.filter((c) => c.id !== clip.id),
+      ),
+    );
+    timeline.setSelection(null);
+    setStatus(`Clip de « ${track.name} » supprimé.`);
+  }
+}
+
+$('#btn-undo').addEventListener('click', () => runCommand('undo'));
+$('#btn-redo').addEventListener('click', () => runCommand('redo'));
+$('#btn-split').addEventListener('click', () => runCommand('split'));
+$('#btn-delete').addEventListener('click', () => runCommand('delete'));
+history.addEventListener('change', updateEditButtons);
+// Nouveau projet ou projet ouvert : l'historique et la sélection repartent de zéro.
+project.addEventListener('load', () => {
+  history.clear();
+  timeline.setSelection(null);
+});
+
 // --- Réactions aux changements du moteur ------------------------------------
 
 engine.addEventListener('state', () => {
@@ -469,12 +629,11 @@ engine.addEventListener('tracks', () => {
   $('#empty-state').hidden = engine.tracks.length > 0;
 });
 
-// Clip déplacé dans le temps : la durée du projet et l'affichage changent.
-engine.addEventListener('arrange', ({ detail }) => {
+// Clips modifiés (déplacés, découpés, rognés…) : la durée du projet et l'affichage changent.
+engine.addEventListener('arrange', () => {
   timeline.invalidate();
   updateInfo();
-  const track = engine.getTrack(detail.id);
-  if (track) setStatus(`${track.name} commence à ${formatTime(track.startTime)}.`);
+  updateEditButtons();
 });
 
 engine.addEventListener('mix', () => {

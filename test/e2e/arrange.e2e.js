@@ -15,7 +15,7 @@ let win;
 const order = () => win.evaluate(() => engine.tracks.map((t) => t.name));
 const startOf = (name) => win.evaluate((n) => engine.tracks.find((t) => t.name === n).startTime, name);
 
-/** Centre de l'en-tête (zone de forme d'onde) du clip d'une piste, en coordonnées écran. */
+/** Point dans l’en-tête du clip d’une piste (zone de déplacement), en coordonnées écran. */
 async function clipPoint(name) {
   return win.evaluate((n) => {
     const i = engine.tracks.findIndex((t) => t.name === n);
@@ -23,7 +23,7 @@ async function clipPoint(name) {
     const rect = document.querySelector('#timeline-canvas').getBoundingClientRect();
     const scroll = document.querySelector('#timeline').scrollLeft;
     const pps = 50; // zoom par défaut
-    return { x: rect.left + (t.startTime + 0.5) * pps - scroll, y: rect.top + 32 + i * 92 + 50 };
+    return { x: rect.left + (t.startTime + 0.5) * pps - scroll, y: rect.top + 32 + i * 92 + 15 };
   }, name);
 }
 

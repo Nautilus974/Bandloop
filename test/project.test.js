@@ -31,7 +31,18 @@ const state = {
       pan: -0.4,
       muted: false,
       solo: true,
-      audio: { path: 'audio/01-voix.wav', origin: 'file', codec: 'wav', originalName: 'voix.wav', frames: 1000 },
+      clips: [
+        { id: 'a', start: 1.25, offset: 0, length: 400 },
+        { id: 'b', start: 1.65, offset: 600, length: 400 },
+      ],
+      audio: {
+        path: 'audio/01-voix.wav',
+        origin: 'file',
+        codec: 'wav',
+        originalName: 'voix.wav',
+        sampleRate: 1000,
+        frames: 1000,
+      },
       vocal: { presetId: 'studio', presetName: 'Studio', bypass: false, settings },
     },
     {
@@ -63,6 +74,10 @@ test('aller-retour complet : manifeste et audio identiques', () => {
   for (const [i, t] of state.tracks.entries()) {
     const r = project.tracks[i];
     for (const k of ['name', 'color', 'startTime', 'volumeDb', 'pan', 'muted', 'solo']) assert.equal(r[k], t[k], k);
+    assert.deepEqual(
+      r.clips,
+      (t.clips ?? []).map(({ start, offset, length }) => ({ start, offset, length })),
+    );
     assert.equal(r.audio.path, t.audio.path);
     assert.equal(r.audio.origin, t.audio.origin);
     assert.deepEqual(r.vocal, { ...t.vocal, settings: t.vocal.settings });
@@ -104,6 +119,28 @@ test('audio manquant dans l’archive', () => {
   assert.throws(
     () => unpackProject(bytes),
     (e) => e.code === 'missing-audio' && /Prise 1/.test(e.message),
+  );
+});
+
+test('projet v1 (sans clips) : un clip couvrant tout l’audio sera créé', () => {
+  const p = parseManifest({
+    format: 'bandloop-project',
+    version: 1,
+    tracks: [{ name: 'a', startTime: 2, audio: { path: 'audio/a.wav' } }],
+  });
+  assert.equal(p.tracks[0].clips, null);
+  assert.equal(p.tracks[0].startTime, 2);
+});
+
+test('montage illisible refusé', () => {
+  const raw = {
+    format: 'bandloop-project',
+    version: 2,
+    tracks: [{ name: 'a', clips: [{ start: 0, offset: -5, length: 10 }], audio: { path: 'a' } }],
+  };
+  assert.throws(
+    () => parseManifest(raw),
+    (e) => e.code === 'corrupt' && /montage/.test(e.message),
   );
 });
 

@@ -48,6 +48,11 @@ export const icons = {
     '<circle cx="7.5" cy="5" r="1.3"/><circle cx="12.5" cy="5" r="1.3"/><circle cx="7.5" cy="10" r="1.3"/><circle cx="12.5" cy="10" r="1.3"/><circle cx="7.5" cy="15" r="1.3"/><circle cx="12.5" cy="15" r="1.3"/>',
     { fill: true },
   ),
+  undo: icon('<path d="M7.5 5.5L4 9l3.5 3.5"/><path d="M4 9h7.5a4.5 4.5 0 0 1 0 9H9"/>'),
+  redo: icon('<path d="M12.5 5.5L16 9l-3.5 3.5"/><path d="M16 9H8.5a4.5 4.5 0 0 0 0 9H11"/>'),
+  scissors: icon(
+    '<circle cx="5.5" cy="5.5" r="2.25"/><circle cx="5.5" cy="14.5" r="2.25"/><path d="M7.4 6.8L16 14M7.4 13.2L16 6"/>',
+  ),
   power: icon('<path d="M10 3.5V10"/><path d="M6.2 5.8a6 6 0 1 0 7.6 0"/>'),
 };
 

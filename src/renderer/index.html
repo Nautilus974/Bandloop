@@ -66,6 +66,39 @@
       </div>
 
       <div class="topbar-right">
+        <div class="edit-tools" role="group" aria-label="Montage">
+          <button
+            id="btn-undo"
+            class="icon-btn"
+            data-icon="undo"
+            title="Annuler (Ctrl/Cmd+Z)"
+            aria-label="Annuler la dernière opération de montage"
+            disabled
+          ></button>
+          <button
+            id="btn-redo"
+            class="icon-btn"
+            data-icon="redo"
+            title="Rétablir (Ctrl/Cmd+Maj+Z)"
+            aria-label="Rétablir l’opération de montage annulée"
+            disabled
+          ></button>
+          <button
+            id="btn-split"
+            class="icon-btn"
+            data-icon="scissors"
+            title="Découper à la tête de lecture ou autour de la sélection (S ou Ctrl/Cmd+K)"
+            aria-label="Découper"
+          ></button>
+          <button
+            id="btn-delete"
+            class="icon-btn"
+            data-icon="trash"
+            title="Supprimer la portion ou le clip sélectionné (Suppr ; Maj+Suppr laisse un blanc)"
+            aria-label="Supprimer la sélection"
+            disabled
+          ></button>
+        </div>
         <div class="zoom" role="group" aria-label="Zoom">
           <button id="zoom-out" class="icon-btn" data-icon="minus" title="Dézoomer" aria-label="Dézoomer"></button>
           <input id="zoom" type="range" min="10" max="400" value="50" aria-label="Zoom" />

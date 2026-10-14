@@ -1,11 +1,12 @@
-// Une piste : un clip audio décodé et sa tranche de console.
+// Une piste : son audio décodé, ses clips (fenêtres sur cet audio, voir clips.js)
+// et sa tranche de console.
 //
-//   source → input → [insert : effets, branché par setInsert] → panner → fader → master
+//   sources (une par clip) → input → [insert : effets] → panner → fader → master
 //
 // Le fader applique volume, mute et solo (calculé par le moteur, qui connaît
 // l'état solo des autres pistes).
+import { clipsSpan, fullClip, scheduleClips, sortClips } from './clips.js';
 import { PEAKS_PER_SECOND, computePeaks } from './peaks.js';
-import { computeSourceSchedule } from './scheduling.js';
 import { clamp } from './scheduling.js';
 
 // Lissage des changements de gain / pan pour éviter les clics.
@@ -26,7 +27,7 @@ export class Track {
     this.buffer = buffer; // audio original, tel qu'importé
     this.playbackBuffer = buffer; // audio lu (peut être remplacé par un rendu traité)
     this.color = color;
-    this.startTime = 0; // position du clip sur la timeline (s)
+    this.clips = [fullClip(buffer.length)];
     this.volumeDb = 0;
     this.pan = 0;
     this.muted = false;
@@ -39,7 +40,7 @@ export class Track {
     this.panner.connect(this.fader);
     this.fader.connect(destination);
     this.insert = null;
-    this.source = null;
+    this.sources = []; // nœuds de lecture en cours (un par clip)
 
     const channels = [];
     for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
@@ -49,12 +50,43 @@ export class Track {
     this.peaksPerSecond = buffer.sampleRate / bucketSize;
   }
 
+  /** Durée de l'audio de la piste (et non des clips). */
   get duration() {
     return this.buffer.duration;
   }
 
+  get sampleRate() {
+    return this.buffer.sampleRate;
+  }
+
+  /** Début du premier clip sur la timeline. */
+  get startTime() {
+    return clipsSpan(this.clips, this.sampleRate).start;
+  }
+
+  /** Déplace TOUS les clips de la piste pour que le premier commence à `t`. */
+  set startTime(t) {
+    const delta = Math.max(0, t) - this.startTime;
+    this.setClips(this.clips.map((c) => ({ ...c, start: c.start + delta })));
+  }
+
+  /** Fin du dernier clip. */
   get end() {
-    return this.startTime + this.duration;
+    return clipsSpan(this.clips, this.sampleRate).end;
+  }
+
+  /**
+   * Remplace les clips. Les débuts sont calés sur l'échantillon : la lecture et
+   * l'export restent exacts (pas d'interpolation entre échantillons).
+   */
+  setClips(clips) {
+    const sr = this.sampleRate;
+    this.clips = sortClips(clips.map((c) => ({ ...c, start: Math.max(0, Math.round(c.start * sr) / sr) })));
+  }
+
+  /** Premier nœud de lecture actif (compatibilité : « la piste joue-t-elle ? »). */
+  get source() {
+    return this.sources[0]?.source ?? null;
   }
 
   /** Applique un gain calculé par le moteur (volume × mute × solo). */
@@ -86,30 +118,27 @@ export class Track {
   /** Programme la lecture : à l'instant `when`, la tête de lecture est à `playhead`. */
   start(when, playhead) {
     this.stop();
-    const plan = computeSourceSchedule({
-      clipStart: this.startTime,
-      clipDuration: this.duration,
+    // Une AudioBufferSourceNode ne sert qu'une fois : on en recrée à chaque lecture.
+    this.sources = scheduleClips(
+      this.ctx,
+      { buffer: this.playbackBuffer, clips: this.clips, sampleRate: this.sampleRate, sourceLength: this.buffer.length },
+      this.input,
       playhead,
       when,
-    });
-    if (!plan) return;
-    // Une AudioBufferSourceNode ne sert qu'une fois : on en recrée une à chaque lecture.
-    const source = this.ctx.createBufferSource();
-    source.buffer = this.playbackBuffer;
-    source.connect(this.input);
-    source.start(plan.when, plan.offset);
-    this.source = source;
+    );
   }
 
   stop() {
-    if (!this.source) return;
-    try {
-      this.source.stop();
-    } catch {
-      // déjà arrêtée
+    for (const { source, gain } of this.sources) {
+      try {
+        source.stop();
+      } catch {
+        // déjà arrêtée
+      }
+      source.disconnect();
+      gain?.disconnect();
     }
-    this.source.disconnect();
-    this.source = null;
+    this.sources = [];
   }
 
   dispose() {

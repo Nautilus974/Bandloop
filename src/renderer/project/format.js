@@ -11,7 +11,8 @@ import { normalizeSettings, normalizeTonality } from '../vocal/settings.js';
 import { createZip, readZip, ZipError } from './zip.js';
 
 export const PROJECT_FORMAT = 'bandloop-project';
-export const PROJECT_VERSION = 1;
+// v1 : un seul clip par piste (startTime). v2 : liste de clips (montage).
+export const PROJECT_VERSION = 2;
 export const PROJECT_EXTENSION = 'bandloop';
 
 export class ProjectError extends Error {
@@ -68,6 +69,8 @@ export function buildManifest({ name, tempo, zoom, playhead, tonality, tracks, u
       pan: t.pan,
       muted: t.muted,
       solo: t.solo,
+      // Montage : fenêtres sur l'audio (offset et longueur en échantillons de audio.sampleRate).
+      clips: (t.clips ?? []).map(({ start, offset, length }) => ({ start, offset, length })),
       audio: t.audio, // { path, origin: 'file'|'take', codec, originalName, sampleRate, channels, frames }
       vocal: t.vocal, // { presetId, presetName, bypass, settings }
     })),
@@ -110,11 +113,13 @@ export function parseManifest(raw) {
         pan: clampNum(t.pan, -1, 1, 0),
         muted: t.muted === true,
         solo: t.solo === true,
+        clips: parseClips(t.clips, t.startTime),
         audio: {
           path: t.audio.path,
           origin: t.audio.origin === 'take' ? 'take' : 'file',
           codec: typeof t.audio.codec === 'string' ? t.audio.codec : '',
           originalName: typeof t.audio.originalName === 'string' ? t.audio.originalName : t.name,
+          sampleRate: Number.isFinite(t.audio.sampleRate) && t.audio.sampleRate > 0 ? t.audio.sampleRate : null,
           frames: Number.isInteger(t.audio.frames) ? t.audio.frames : null,
         },
         vocal: {
@@ -126,6 +131,24 @@ export function parseManifest(raw) {
       };
     }),
   };
+}
+
+/**
+ * Clips d'une piste lus sur disque. Projet v1 (pas de clips) : `null`, ce qui
+ * veut dire « un clip couvrant tout l'audio, posé à startTime ».
+ */
+function parseClips(raw, startTime) {
+  if (!Array.isArray(raw)) return null;
+  const valid = (c) =>
+    c &&
+    Number.isFinite(c.start) &&
+    c.start >= 0 &&
+    Number.isInteger(c.offset) &&
+    c.offset >= 0 &&
+    Number.isInteger(c.length) &&
+    c.length > 0;
+  if (!raw.every(valid)) throw new ProjectError('corrupt', 'Le montage d’une piste est illisible.');
+  return raw.map(({ start, offset, length }) => ({ start, offset, length }));
 }
 
 /** Assemble le fichier .bandloop. */

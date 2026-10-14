@@ -18,6 +18,11 @@ vocaux et des presets. Construit avec **Electron** et la **Web Audio API**.
   temps (aimanté sur 0, la tête de lecture, les autres clips et la grille ;
   Maj pour un placement libre), en haut ou en bas pour changer la piste de
   place ; poignée ⠿ sur chaque piste ; bouton « + » sous la dernière piste.
+- **Montage des clips** (non destructif) : découper (S ou Ctrl/⌘+K), sélectionner
+  une portion en glissant (début, fin et durée affichés), la supprimer (Suppr :
+  le reste se recolle ; Maj+Suppr : un blanc reste), rogner les bords, déplacer
+  chaque morceau, annuler / rétablir (Ctrl/⌘+Z). Coupes à l'échantillon près,
+  micro-fondus anti-clic aux jointures.
 - **Projets** : fichier `.bandloop` autonome (tout l'audio embarqué : fichiers
   importés tels quels, prises micro en FLAC sans perte), Nouveau / Ouvrir /
   Enregistrer / Enregistrer sous, titre avec `*` si modifié, confirmation
@@ -49,30 +54,37 @@ Importe `samples/voix.wav`, clique sur **FX** sur la piste, puis essaie les
 presets. Pour la correction et les harmonies, règle d'abord la **tonalité du
 morceau** (ici La mineur, c'est-à-dire `La` + `Mineur naturel`).
 
-| Raccourci                       | Action                                    |
-| ------------------------------- | ----------------------------------------- |
-| Espace                          | Lecture / pause                           |
-| Entrée                          | Stop (retour au début)                    |
-| Début                           | Retour au début sans arrêter              |
-| Clic sur la timeline            | Sélectionner la piste et déplacer la tête |
-| Double-clic sur un curseur      | Valeur par défaut                         |
-| Glisser vertical sur le pan (⇧) | Réglage (fin avec ⇧)                      |
+| Raccourci                       | Action                                     |
+| ------------------------------- | ------------------------------------------ |
+| Espace                          | Lecture / pause                            |
+| Entrée                          | Stop (retour au début)                     |
+| Début                           | Retour au début sans arrêter               |
+| Clic sur la timeline            | Sélectionner la piste et déplacer la tête  |
+| S ou Ctrl/⌘+K                   | Découper le clip                           |
+| Suppr (Maj+Suppr)               | Supprimer la portion ou le clip            |
+| Ctrl/⌘+Z, Ctrl/⌘+Maj+Z          | Annuler, rétablir (montage)                |
+| Alt+← / → , Alt+↑ / ↓           | Décaler le clip, changer la piste de place |
+| Double-clic sur un curseur      | Valeur par défaut                          |
+| Glisser vertical sur le pan (⇧) | Réglage (fin avec ⇧)                       |
 
 ## Scripts
 
-| Commande           | Rôle                                                                                                                                              |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm start`        | Lance l'app en développement                                                                                                                      |
-| `npm test`         | Tests unitaires (`node:test`, sans Electron)                                                                                                      |
-| `npm run test:e2e` | Tests de bout en bout dans l'app Electron (enregistrement, déplacement, projets, export) ; sous Linux sans écran : `xvfb-run -a npm run test:e2e` |
-| `npm run samples`  | Génère des WAV de démo                                                                                                                            |
-| `npm run dist:mac` | Construit un `.dmg` (à lancer sur un Mac)                                                                                                         |
-| `npm run dist:win` | Construit un installeur `.exe` (NSIS)                                                                                                             |
+| Commande           | Rôle                                                                                                                                                       |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm start`        | Lance l'app en développement                                                                                                                               |
+| `npm test`         | Tests unitaires (`node:test`, sans Electron)                                                                                                               |
+| `npm run test:e2e` | Tests de bout en bout dans l'app Electron (enregistrement, déplacement, montage, projets, export) ; sous Linux sans écran : `xvfb-run -a npm run test:e2e` |
+| `npm run samples`  | Génère des WAV de démo                                                                                                                                     |
+| `npm run dist:mac` | Construit un `.dmg` (à lancer sur un Mac)                                                                                                                  |
+| `npm run dist:win` | Construit un installeur `.exe` (NSIS)                                                                                                                      |
 
 ## Documentation
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) : processus Electron, graphe
   audio, transport, interface.
+- [docs/MONTAGE.md](docs/MONTAGE.md) : découper, sélectionner, supprimer, rogner,
+  annuler ; modèle non destructif, **précision des coupes, clics aux jointures,
+  limites**.
 - [docs/PROJETS-ET-EXPORT.md](docs/PROJETS-ET-EXPORT.md) : format `.bandloop`,
   choix des formats audio, export, **limites** (taille, durées, qualité MP3).
 - [docs/ENREGISTREMENT.md](docs/ENREGISTREMENT.md) : enregistrement au micro,

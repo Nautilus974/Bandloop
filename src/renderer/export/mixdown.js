@@ -3,6 +3,7 @@
 // chaîne d'effets temps réel, panoramique, volume × mute × solo, bus master et
 // limiteur. Puis limiteur brickwall à anticipation pour garantir l'absence de
 // saturation.
+import { scheduleClips } from '../audio/clips.js';
 import { effectiveGain } from '../audio/mixing.js';
 import { limitPeaks, peakOf } from '../project/limiter.js';
 import { FxChain } from '../vocal/fx/FxChain.js';
@@ -64,7 +65,8 @@ export async function renderMix({ engine, hub, sampleRate = engine.ctx.sampleRat
     const state = hub.getState(t.id);
     return state && !state.bypass ? state.settings.chain : [];
   });
-  const end = Math.max(...audible.map((t) => t.end));
+  const end = Math.max(0, ...audible.map((t) => t.end));
+  if (end <= 0) throw new ExportError('Rien à exporter : les pistes audibles n’ont plus aucun clip.');
   const duration = end + tailSeconds(chains);
   const length = Math.ceil(duration * sampleRate);
   const ctx = new OfflineAudioContext(2, length, sampleRate);
@@ -81,17 +83,26 @@ export async function renderMix({ engine, hub, sampleRate = engine.ctx.sampleRat
   master.connect(limiter).connect(ctx.destination);
 
   audible.forEach((track, i) => {
-    const source = ctx.createBufferSource();
-    source.buffer = track.playbackBuffer; // audio d'origine ou rendu vocal (correction, harmonies…)
     const chain = new FxChain(ctx);
     chain.apply(chains[i]);
     const panner = ctx.createStereoPanner();
     panner.pan.value = track.pan;
     const fader = ctx.createGain();
     fader.gain.value = effectiveGain(track, anySolo);
-    source.connect(chain.input);
     chain.output.connect(panner).connect(fader).connect(master);
-    source.start(track.startTime);
+    // Clips de la piste, joués comme en lecture (audio d'origine ou rendu vocal).
+    scheduleClips(
+      ctx,
+      {
+        buffer: track.playbackBuffer,
+        clips: track.clips,
+        sampleRate: track.sampleRate,
+        sourceLength: track.buffer.length,
+      },
+      chain.input,
+      0,
+      0,
+    );
   });
 
   // Progression : le rendu est suspendu chaque seconde de son pour la signaler.

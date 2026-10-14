@@ -414,6 +414,19 @@ kbd {
   gap: 10px;
 }
 
+.edit-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding-right: 8px;
+  border-right: 1px solid var(--line-2);
+}
+
+.icon-btn:disabled {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
 .zoom {
   display: flex;
   align-items: center;

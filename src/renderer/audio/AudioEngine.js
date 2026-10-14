@@ -3,6 +3,7 @@
 // Toutes les pistes sont démarrées sur la même horloge (AudioContext.currentTime)
 // avec une petite avance, ce qui garantit une synchronisation à l'échantillon près.
 import { reorder } from './arrange.js';
+import { sortClips } from './clips.js';
 import { effectiveGain } from './mixing.js';
 import { Track } from './Track.js';
 import { clamp } from './scheduling.js';
@@ -117,15 +118,64 @@ export class AudioEngine extends EventTarget {
     this.#emit('tracks');
   }
 
-  /** Déplace le clip d'une piste dans le temps (gauche/droite). */
+  /** Déplace tous les clips d'une piste dans le temps (gauche/droite). */
   setTrackStart(id, startTime) {
     if (this.locked) return;
     const track = this.getTrack(id);
     if (!track) return;
     track.startTime = Math.max(0, startTime);
+    this.#afterClipsChange(track);
+  }
+
+  /** Remplace les clips d'une piste (découpe, rognage, suppression, déplacement). */
+  setClips(id, clips) {
+    if (this.locked) return false;
+    const track = this.getTrack(id);
+    if (!track) return false;
+    track.setClips(clips);
+    this.#afterClipsChange(track);
+    return true;
+  }
+
+  /** Déplace un clip dans le temps. */
+  moveClip(trackId, clipId, start) {
+    const track = this.getTrack(trackId);
+    if (!track) return;
+    this.setClips(
+      trackId,
+      track.clips.map((c) => (c.id === clipId ? { ...c, start: Math.max(0, start) } : c)),
+    );
+  }
+
+  #afterClipsChange(track) {
     // En lecture, seule cette piste est relancée à la bonne position.
     if (this.state === 'playing') track.start(this.ctx.currentTime, this.position);
-    this.#emit('arrange', { id });
+    this.#emit('arrange', { id: track.id });
+  }
+
+  /** Instantané de l'arrangement (ordre des pistes + clips), pour l'annulation. */
+  getArrangement() {
+    return {
+      order: this.tracks.map((t) => t.id),
+      clips: Object.fromEntries(this.tracks.map((t) => [t.id, t.clips.map((c) => ({ ...c }))])),
+    };
+  }
+
+  /** Restaure un instantané (les pistes supprimées depuis sont ignorées). */
+  restoreArrangement({ order, clips }) {
+    if (this.locked) return;
+    const rank = (t) => {
+      const i = order.indexOf(t.id);
+      return i < 0 ? order.length : i;
+    };
+    this.tracks = [...this.tracks].sort((a, b) => rank(a) - rank(b));
+    for (const track of this.tracks) {
+      if (!clips[track.id]) continue;
+      track.setClips(sortClips(clips[track.id]));
+      if (this.state === 'playing') track.start(this.ctx.currentTime, this.position);
+    }
+    this.#emit('tracks');
+    this.#emit('arrange', {});
   }
 
   getTrack(id) {

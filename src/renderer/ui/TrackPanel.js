@@ -34,6 +34,7 @@ export class TrackPanel extends EventTarget {
     if (e.button !== 0 || this.engine.locked) return;
     e.preventDefault();
     this.draggingId = track.id;
+    const before = this.ui.captureArrangement?.();
     document.body.classList.add('reordering');
     this.render();
     this.refresh();
@@ -49,6 +50,8 @@ export class TrackPanel extends EventTarget {
       window.removeEventListener('pointercancel', up);
       document.body.classList.remove('reordering');
       this.draggingId = null;
+      // L'ordre a changé en direct : on l'enregistre pour pouvoir l'annuler.
+      this.ui.edit?.('Déplacer la piste', () => {}, before);
       this.render();
       this.refresh();
     };

@@ -1,10 +1,18 @@
-// Timeline dessinée sur canvas : règle, clips avec formes d'onde et tête de lecture.
+// Timeline dessinée sur canvas : règle, clips avec formes d'onde, tête de lecture
+// et montage à la souris.
 //
 // Le canvas a la taille de la zone visible (et non du projet entier) : un
 // "spacer" donne la largeur scrollable et on dessine en tenant compte de scrollLeft.
 // Les formes d'onde sont rendues dans un canvas hors-écran, ré-utilisé à chaque
-// image ; seule la tête de lecture est redessinée pendant la lecture.
+// image ; la tête de lecture, la sélection et les repères de glisser sont
+// redessinés par-dessus à chaque image.
+//
+// Zones d'un clip (comme dans la plupart des DAW) :
+//   ┌──────────── en-tête : glisser = déplacer le clip (et la piste en hauteur) ┐
+//   ║ bord                corps : glisser = sélectionner une portion       bord ║
+//   └ (6 px) rogner ───────────────────────────────────────────────── rogner ┘
 import { laneAt, snapCandidates, snapStart } from '../audio/arrange.js';
+import { clipEnd, sortClips, trimClip } from '../audio/clips.js';
 import { peakRange } from '../audio/peaks.js';
 import { RULER_HEIGHT, TRACK_HEIGHT } from './layout.js';
 import { formatRulerLabel, formatTime, rulerStep } from './time.js';
@@ -20,18 +28,29 @@ const COLORS = {
   grid: '#171b21',
   gridMajor: '#1f242c',
   playhead: '#d7ff4f',
+  snap: '#2fd4b5',
+  selection: '#eaedf2',
 };
 const REC_COLOR = '#ff4d6d';
 const CLIP_PAD = 6;
 const CLIP_HEADER = 18;
+const EDGE_PIXELS = 6; // largeur des poignées de rognage
 const DRAG_THRESHOLD = 4; // pixels avant qu'un clic devienne un glisser
 const SNAP_PIXELS = 8; // distance d'aimantation
+
+const CURSORS = { move: 'grab', trim: 'ew-resize', range: 'text' };
 
 export class Timeline {
   /**
    * @param {HTMLElement} scroller  Conteneur scrollable horizontalement
    * @param {import('../audio/AudioEngine.js').AudioEngine} engine
-   * @param {{ getSelectedId: () => number|null, select: (id: number) => void, fxLabel?: (id: number) => string|null, getLiveTake?: () => object|null }} ui
+   * @param {{
+   *   getSelectedId: () => number|null, select: (id: number) => void,
+   *   fxLabel?: (id: number) => string|null, getLiveTake?: () => object|null,
+   *   edit: (label: string, fn: () => void, before?: object) => void,
+   *   captureArrangement: () => object,
+   *   onClipSelection?: (selection: object|null) => void,
+   * }} ui
    */
   constructor(scroller, engine, ui) {
     this.scroller = scroller;
@@ -43,15 +62,18 @@ export class Timeline {
     this.ctx2d = this.canvas.getContext('2d');
     this.layer = document.createElement('canvas'); // couche statique (formes d'onde)
     this.layerDirty = true;
+    this.drag = null; // geste en cours : déplacement, rognage ou sélection
+    /** Clip sélectionné, avec éventuellement une portion [from, to] (secondes). */
+    this.selection = null;
 
     scroller.addEventListener('scroll', () => this.invalidate());
     new ResizeObserver(() => this.invalidate()).observe(scroller);
     this.canvas.addEventListener('pointerdown', (e) => this.#onPointerDown(e));
     this.canvas.addEventListener('pointermove', (e) => {
       if (this.drag) return;
-      this.canvas.style.cursor = !this.engine.locked && this.#clipAt(e) ? 'grab' : '';
+      const hit = this.engine.locked ? null : this.#hitTest(e);
+      this.canvas.style.cursor = hit ? CURSORS[hit.zone] : '';
     });
-    this.drag = null; // { id, start, snappedTo } pendant un déplacement de clip
   }
 
   setZoom(pixelsPerSecond) {
@@ -68,6 +90,39 @@ export class Timeline {
     this.layerDirty = true;
   }
 
+  // --- Sélection de clip ------------------------------------------------------
+
+  /** Clip sélectionné et sa piste, ou null (la sélection est oubliée si le clip a disparu). */
+  getSelection() {
+    const sel = this.selection;
+    if (!sel) return null;
+    const track = this.engine.getTrack(sel.trackId);
+    const clip = track?.clips.find((c) => c.id === sel.clipId);
+    if (!clip) {
+      this.setSelection(null);
+      return null;
+    }
+    // La portion est bornée au clip (il a pu être rogné ou déplacé depuis).
+    const end = clipEnd(clip, track.sampleRate);
+    let range = null;
+    if (sel.from !== undefined) {
+      const from = Math.max(clip.start, sel.from);
+      const to = Math.min(end, sel.to);
+      if (to - from > 1 / track.sampleRate) range = { from, to };
+    }
+    return { track, clip, range };
+  }
+
+  /** @param {{ trackId: number, clipId: string, from?: number, to?: number } | null} sel */
+  setSelection(sel) {
+    this.selection = sel ? { ...sel } : null;
+    if (sel) this.ui.select(sel.trackId);
+    this.invalidate();
+    this.ui.onClipSelection?.(this.selection);
+  }
+
+  // --- Dessin -----------------------------------------------------------------
+
   /** Dessine une image ; appelé à chaque requestAnimationFrame. */
   render() {
     if (this.layerDirty) {
@@ -82,8 +137,9 @@ export class Timeline {
 
     const dpr = window.devicePixelRatio || 1;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const x = Math.round(this.engine.position * this.pixelsPerSecond - this.scroller.scrollLeft) + 0.5;
     const height = canvas.height / dpr;
+    this.#drawRangeOverlay(g);
+    const x = Math.round(this.#x(this.engine.position)) + 0.5;
     g.strokeStyle = COLORS.playhead;
     g.lineWidth = 1;
     g.beginPath();
@@ -101,13 +157,62 @@ export class Timeline {
     if (this.drag?.moved) this.#drawDragOverlay(g, height);
   }
 
-  /** Repère d'aimantation et position du clip déplacé. */
+  #x(time) {
+    return time * this.pixelsPerSecond - this.scroller.scrollLeft;
+  }
+
+  #laneTop(trackId) {
+    const index = this.engine.tracks.findIndex((t) => t.id === trackId);
+    return index < 0 ? null : RULER_HEIGHT + index * TRACK_HEIGHT;
+  }
+
+  /** Portion sélectionnée (ou en cours de sélection) : surlignage + début, fin, durée. */
+  #drawRangeOverlay(g) {
+    const live = this.drag?.kind === 'range' && this.drag.moved ? this.drag : null;
+    let trackId, from, to;
+    if (live) ({ trackId, from, to } = live);
+    else {
+      const sel = this.getSelection();
+      if (!sel?.range) return;
+      ({ from, to } = sel.range);
+      trackId = sel.track.id;
+    }
+    const laneTop = this.#laneTop(trackId);
+    if (laneTop === null) return;
+    const top = laneTop + CLIP_PAD + CLIP_HEADER;
+    const h = TRACK_HEIGHT - CLIP_PAD * 2 - 1 - CLIP_HEADER;
+    const x0 = this.#x(from);
+    const x1 = this.#x(to);
+    g.fillStyle = 'rgb(234 237 242 / 22%)';
+    g.fillRect(x0, top, x1 - x0, h);
+    g.fillStyle = COLORS.selection;
+    g.fillRect(Math.round(x0), top, 1, h);
+    g.fillRect(Math.round(x1) - 1, top, 1, h);
+    this.#pill(g, `${formatTime(from)} → ${formatTime(to)} · ${formatTime(to - from)}`, x0, laneTop - 2);
+  }
+
+  /** Étiquette claire au-dessus d'une voie (ou dans la règle pour la première). */
+  #pill(g, label, x, bottom) {
+    g.font = '600 11px "JetBrains Mono", monospace';
+    const w = g.measureText(label).width + 12;
+    const viewWidth = this.canvas.width / (window.devicePixelRatio || 1);
+    const lx = Math.max(4, Math.min(viewWidth - w - 4, x));
+    const ly = Math.max(RULER_HEIGHT + 2, bottom - 18);
+    g.fillStyle = COLORS.selection;
+    g.beginPath();
+    g.roundRect(lx, ly, w, 18, 5);
+    g.fill();
+    g.fillStyle = '#0a0c0f';
+    g.textBaseline = 'middle';
+    g.fillText(label, lx + 6, ly + 9.5);
+  }
+
+  /** Repère d'aimantation et position du clip déplacé ou du bord rogné. */
   #drawDragOverlay(g, height) {
     const { drag } = this;
-    const scrollLeft = this.scroller.scrollLeft;
-    if (drag.snappedTo !== null) {
-      const sx = Math.round(drag.snappedTo * this.pixelsPerSecond - scrollLeft) + 0.5;
-      g.strokeStyle = '#2fd4b5';
+    if (drag.snappedTo !== null && drag.snappedTo !== undefined) {
+      const sx = Math.round(this.#x(drag.snappedTo)) + 0.5;
+      g.strokeStyle = COLORS.snap;
       g.setLineDash([4, 3]);
       g.beginPath();
       g.moveTo(sx, RULER_HEIGHT);
@@ -115,20 +220,11 @@ export class Timeline {
       g.stroke();
       g.setLineDash([]);
     }
-    const index = this.engine.tracks.findIndex((t) => t.id === drag.id);
-    if (index < 0) return;
-    const label = formatTime(drag.start);
-    g.font = '600 11px "JetBrains Mono", monospace';
-    const w = g.measureText(label).width + 12;
-    const lx = Math.max(4, drag.start * this.pixelsPerSecond - scrollLeft);
-    const ly = RULER_HEIGHT + index * TRACK_HEIGHT - 22;
-    g.fillStyle = '#eaedf2';
-    g.beginPath();
-    g.roundRect(lx, Math.max(RULER_HEIGHT + 2, ly), w, 18, 5);
-    g.fill();
-    g.fillStyle = '#0a0c0f';
-    g.textBaseline = 'middle';
-    g.fillText(label, lx + 6, Math.max(RULER_HEIGHT + 2, ly) + 9.5);
+    const laneTop = this.#laneTop(drag.trackId);
+    if (laneTop === null || drag.kind === 'range') return;
+    const sr = this.engine.getTrack(drag.trackId)?.sampleRate ?? 48000;
+    const time = drag.kind === 'move' || drag.edge === 'start' ? drag.clip.start : clipEnd(drag.clip, sr);
+    this.#pill(g, formatTime(time), this.#x(time) - (drag.edge === 'end' ? 60 : 0), laneTop - 2);
   }
 
   /** Fait défiler la vue pour garder la tête de lecture visible pendant la lecture. */
@@ -142,9 +238,7 @@ export class Timeline {
 
   /** Prise en cours d'enregistrement, dessinée comme un clip dans une voie supplémentaire. */
   #liveClip() {
-    const live = this.ui.getLiveTake?.();
-    if (!live) return null;
-    return { id: -1, name: '● Enregistrement…', color: REC_COLOR, ...live };
+    return this.ui.getLiveTake?.() ?? null;
   }
 
   #updateSize() {
@@ -200,13 +294,41 @@ export class Timeline {
       g.fillRect(Math.floor(x), RULER_HEIGHT, 1, height - RULER_HEIGHT);
     }
 
-    this.engine.tracks.forEach((track, i) => this.#drawClip(g, track, RULER_HEIGHT + i * TRACK_HEIGHT, width));
+    const selection = this.getSelection();
+    this.engine.tracks.forEach((track, i) => {
+      const laneTop = RULER_HEIGHT + i * TRACK_HEIGHT;
+      const audible = this.engine.isAudible(track);
+      const fx = this.ui.fxLabel?.(track.id);
+      for (const clip of this.#displayedClips(track)) {
+        this.#drawClip(g, laneTop, width, {
+          name: track.name,
+          color: track.color,
+          peaks: track.peaks,
+          peaksPerSecond: track.peaksPerSecond,
+          start: clip.start,
+          duration: clip.length / track.sampleRate,
+          audioOffset: clip.offset / track.sampleRate,
+          audible,
+          fx,
+          selected: selection?.clip.id === clip.id,
+        });
+      }
+    });
     const live = this.#liveClip();
     if (live) {
       const top = RULER_HEIGHT + this.engine.tracks.length * TRACK_HEIGHT;
       g.fillStyle = 'rgb(255 77 109 / 6%)';
       g.fillRect(0, top, width, TRACK_HEIGHT);
-      this.#drawClip(g, live, top, width);
+      this.#drawClip(g, top, width, {
+        name: '● Enregistrement…',
+        color: REC_COLOR,
+        peaks: live.peaks,
+        peaksPerSecond: live.peaksPerSecond,
+        start: live.startTime,
+        duration: live.duration,
+        audioOffset: 0,
+        audible: true,
+      });
     }
 
     // Règle.
@@ -227,78 +349,99 @@ export class Timeline {
     }
   }
 
-  #drawClip(g, track, laneTop, viewWidth) {
+  /** Clips d'une piste tels qu'affichés : avec l'aperçu du geste en cours. */
+  #displayedClips(track) {
+    const { drag } = this;
+    if (!drag?.moved || drag.trackId !== track.id || drag.kind === 'range') return track.clips;
+    return sortClips(track.clips.map((c) => (c.id === drag.clip.id ? drag.clip : c)));
+  }
+
+  #drawClip(g, laneTop, viewWidth, clip) {
     const pps = this.pixelsPerSecond;
-    const scrollLeft = this.scroller.scrollLeft;
-    const start = this.drag?.id === track.id ? this.drag.start : track.startTime;
-    const clipX = start * pps - scrollLeft;
-    const clipW = track.duration * pps;
+    const clipX = this.#x(clip.start);
+    const clipW = Math.max(1, clip.duration * pps);
     const x0 = Math.max(-4, clipX);
     const x1 = Math.min(viewWidth + 4, clipX + clipW);
     if (x1 <= x0) return;
     const top = laneTop + CLIP_PAD;
     const h = TRACK_HEIGHT - CLIP_PAD * 2 - 1;
+    const radius = Math.min(6, clipW / 2);
 
     g.save();
-    const audible = track.id < 0 || this.engine.isAudible(track);
-    g.globalAlpha = audible ? 1 : 0.32;
+    g.globalAlpha = clip.audible ? 1 : 0.32;
     g.beginPath();
-    g.roundRect(clipX, top, clipW, h, 6);
+    g.roundRect(clipX, top, clipW, h, radius);
     g.clip();
-    g.fillStyle = `${track.color}1f`;
+    g.fillStyle = `${clip.color}${clip.selected ? '2e' : '1f'}`;
     g.fillRect(x0, top, x1 - x0, h);
-    g.fillStyle = `${track.color}38`;
+    g.fillStyle = `${clip.color}38`;
     g.fillRect(x0, top, x1 - x0, CLIP_HEADER);
 
     // Nom du clip, collé au bord gauche visible.
-    g.fillStyle = track.color;
+    g.fillStyle = clip.color;
     g.font = '600 11px "Inter Variable", system-ui, sans-serif';
     g.textBaseline = 'middle';
-    g.fillText(track.name, Math.max(clipX, 0) + 8, top + CLIP_HEADER / 2 + 0.5);
+    const nameX = Math.max(clipX, 0) + 8;
+    g.fillText(clip.name, nameX, top + CLIP_HEADER / 2 + 0.5);
+    const nameEnd = nameX + g.measureText(clip.name).width;
 
-    // Pastille du preset / des effets, collée au bord droit visible du clip.
-    const fx = this.ui.fxLabel?.(track.id);
-    if (fx) {
+    // Pastille du preset / des effets, collée au bord droit visible du clip (s'il y a la place).
+    if (clip.fx) {
       g.font = '650 10px "Inter Variable", system-ui, sans-serif';
-      const w = g.measureText(fx).width + 12;
+      const w = g.measureText(clip.fx).width + 12;
       const right = Math.min(clipX + clipW, viewWidth) - 6;
-      g.fillStyle = track.color;
-      g.beginPath();
-      g.roundRect(right - w, top + 3, w, CLIP_HEADER - 6, 6);
-      g.fill();
-      g.fillStyle = '#0a0c0f';
-      g.fillText(fx, right - w + 6, top + CLIP_HEADER / 2 + 0.5);
+      if (right - w > nameEnd + 6) {
+        g.fillStyle = clip.color;
+        g.beginPath();
+        g.roundRect(right - w, top + 3, w, CLIP_HEADER - 6, 6);
+        g.fill();
+        g.fillStyle = '#0a0c0f';
+        g.fillText(clip.fx, right - w + 6, top + CLIP_HEADER / 2 + 0.5);
+      }
     }
 
-    // Forme d'onde : pour chaque colonne de pixels, min/max des pics correspondants.
+    // Forme d'onde : pour chaque colonne de pixels, min/max des pics correspondants,
+    // décalés de la position du clip dans l'audio de la piste.
     const waveTop = top + CLIP_HEADER;
     const waveH = h - CLIP_HEADER;
     const mid = waveTop + waveH / 2;
     const amp = waveH / 2 - 3;
-    const peaksPerPixel = track.peaksPerSecond / pps;
-    g.fillStyle = track.color;
+    const peaksPerPixel = clip.peaksPerSecond / pps;
+    const peakOffset = clip.audioOffset * clip.peaksPerSecond;
+    g.fillStyle = clip.color;
     for (let x = Math.floor(Math.max(0, x0)); x < Math.min(viewWidth, x1); x++) {
-      const from = (x - clipX) * peaksPerPixel;
-      const { min, max } = peakRange(track.peaks, from, from + peaksPerPixel);
+      const from = peakOffset + (x - clipX) * peaksPerPixel;
+      const { min, max } = peakRange(clip.peaks, from, from + peaksPerPixel);
       const y1 = mid - max * amp;
       const y2 = mid - min * amp;
       g.fillRect(x, y1, 1, Math.max(1, y2 - y1));
     }
     g.restore();
 
-    // Contour.
+    // Contour (plus marqué si le clip est sélectionné).
     g.save();
-    g.globalAlpha = audible ? 0.55 : 0.2;
-    g.strokeStyle = track.color;
-    g.lineWidth = 1;
+    g.globalAlpha = clip.selected ? 1 : clip.audible ? 0.55 : 0.2;
+    g.strokeStyle = clip.selected ? COLORS.selection : clip.color;
+    g.lineWidth = clip.selected ? 2 : 1;
+    const inset = clip.selected ? 1 : 0.5;
     g.beginPath();
-    g.roundRect(clipX + 0.5, top + 0.5, clipW - 1, h - 1, 6);
+    g.roundRect(clipX + inset, top + inset, Math.max(1, clipW - inset * 2), h - inset * 2, radius);
     g.stroke();
     g.restore();
   }
 
-  /** Clip sous le pointeur, ou null. */
-  #clipAt(e) {
+  // --- Souris -----------------------------------------------------------------
+
+  #timeAt(clientX) {
+    const rect = this.canvas.getBoundingClientRect();
+    return (clientX - rect.left + this.scroller.scrollLeft) / this.pixelsPerSecond;
+  }
+
+  /**
+   * Clip et zone sous le pointeur, ou null.
+   * @returns {{ track, index: number, clip, zone: 'move'|'trim'|'range', edge?: 'start'|'end' } | null}
+   */
+  #hitTest(e) {
     const rect = this.canvas.getBoundingClientRect();
     const y = e.clientY - rect.top - RULER_HEIGHT;
     if (y < 0) return null;
@@ -306,26 +449,56 @@ export class Timeline {
     const track = this.engine.tracks[index];
     if (!track) return null;
     const yIn = y - index * TRACK_HEIGHT;
-    const t = (e.clientX - rect.left + this.scroller.scrollLeft) / this.pixelsPerSecond;
-    const inside = t >= track.startTime && t <= track.end && yIn >= CLIP_PAD && yIn <= TRACK_HEIGHT - CLIP_PAD;
-    return inside ? { track, index } : null;
+    if (yIn < CLIP_PAD || yIn > TRACK_HEIGHT - CLIP_PAD) return null;
+    const px = e.clientX - rect.left;
+    // Le dernier clip dessiné est au-dessus : on cherche à rebours.
+    const clips = sortClips(track.clips);
+    for (let i = clips.length - 1; i >= 0; i--) {
+      const clip = clips[i];
+      const x0 = this.#x(clip.start);
+      const x1 = this.#x(clipEnd(clip, track.sampleRate));
+      if (px < x0 || px > x1) continue;
+      const hit = { track, index, clip };
+      // Poignées de rognage à l'intérieur du clip : entre deux clips bout à bout,
+      // le côté du pointeur décide lequel est rogné.
+      if (x1 - x0 >= EDGE_PIXELS * 3) {
+        if (px - x0 < EDGE_PIXELS) return { ...hit, zone: 'trim', edge: 'start' };
+        if (x1 - px < EDGE_PIXELS) return { ...hit, zone: 'trim', edge: 'end' };
+      }
+      return { ...hit, zone: yIn < CLIP_PAD + CLIP_HEADER ? 'move' : 'range' };
+    }
+    return null;
+  }
+
+  /** Points d'aimantation : 0, tête de lecture, bords des autres clips (toutes pistes), grille. */
+  #snap(raw, duration, exceptClipId) {
+    const others = [];
+    for (const t of this.engine.tracks) {
+      for (const c of t.clips)
+        if (c.id !== exceptClipId) others.push({ start: c.start, end: clipEnd(c, t.sampleRate) });
+    }
+    const candidates = snapCandidates({
+      position: this.engine.position,
+      otherClips: others,
+      gridStep: rulerStep(this.pixelsPerSecond),
+      near: raw,
+    });
+    return snapStart(raw, duration, candidates, SNAP_PIXELS / this.pixelsPerSecond);
   }
 
   #onPointerDown(e) {
     if (e.button !== 0) return;
     const rect = this.canvas.getBoundingClientRect();
-    const seekAt = (clientX) => {
-      const x = clientX - rect.left + this.scroller.scrollLeft;
-      this.engine.seek(x / this.pixelsPerSecond);
-    };
-    const hit = this.engine.locked ? null : this.#clipAt(e);
-    if (hit) return this.#startClipDrag(e, hit, seekAt);
+    const seekAt = (clientX) => this.engine.seek(Math.max(0, this.#timeAt(clientX)));
+    const hit = this.engine.locked ? null : this.#hitTest(e);
+    if (hit) return this.#startGesture(e, hit, seekAt);
 
     // Clic dans une piste (hors clip) ou dans la règle : sélection + tête de lecture.
     const y = e.clientY - rect.top - RULER_HEIGHT;
     if (y >= 0) {
       const track = this.engine.tracks[Math.floor(y / TRACK_HEIGHT)];
       if (track) this.ui.select(track.id);
+      if (this.selection) this.setSelection(null);
     }
     seekAt(e.clientX);
     // Glisser pour faire défiler la tête de lecture.
@@ -339,57 +512,91 @@ export class Timeline {
   }
 
   /**
-   * Glisser un clip : horizontalement il change de position dans le temps
-   * (aimanté sur 0, la tête, les autres clips et la grille ; Maj = libre),
-   * verticalement la piste change de place dans la liste.
-   * Un simple clic sans mouvement sélectionne la piste et place la tête.
+   * Geste sur un clip, selon la zone :
+   * - en-tête : horizontalement, le clip change de position dans le temps ;
+   *   verticalement, la piste change de place dans la liste ;
+   * - bord : rognage ;
+   * - corps : sélection d'une portion.
+   * Aimantation sur 0, la tête, les bords des autres clips et la grille ; Maj = libre.
+   * Un simple clic sans mouvement sélectionne le clip et place la tête.
    */
-  #startClipDrag(e, { track }, seekAt) {
+  #startGesture(e, { track, clip, zone, edge }, seekAt) {
     const rect = this.canvas.getBoundingClientRect();
     const startX = e.clientX;
     const startY = e.clientY;
-    const origin = track.startTime;
+    const sr = track.sampleRate;
+    const before = this.ui.captureArrangement();
     this.ui.select(track.id);
-    this.drag = { id: track.id, start: origin, snappedTo: null, moved: false };
+    let pressed = this.#timeAt(e.clientX);
+    if (zone === 'range' && !e.shiftKey) pressed = this.#snap(pressed, 0, clip.id).time;
+    const anchor = Math.max(clip.start, Math.min(clipEnd(clip, sr), pressed));
+    this.drag = { kind: zone, trackId: track.id, clip, edge, snappedTo: null, moved: false, from: anchor, to: anchor };
     this.canvas.setPointerCapture(e.pointerId);
+    if (zone === 'move') this.canvas.style.cursor = 'grabbing';
 
     const move = (ev) => {
       const dx = ev.clientX - startX;
       const dy = ev.clientY - startY;
       if (!this.drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
       this.drag.moved = true;
-      this.canvas.style.cursor = 'grabbing';
-      const pps = this.pixelsPerSecond;
-      const raw = origin + dx / pps;
-      if (ev.shiftKey) {
-        Object.assign(this.drag, { start: Math.max(0, raw), snappedTo: null });
+      const raw =
+        (zone === 'move'
+          ? clip.start
+          : zone === 'trim'
+            ? edge === 'start'
+              ? clip.start
+              : clipEnd(clip, sr)
+            : anchor) +
+        dx / this.pixelsPerSecond;
+      const duration = zone === 'move' ? clip.length / sr : 0;
+      const snapped = ev.shiftKey ? { time: Math.max(0, raw), snappedTo: null } : this.#snap(raw, duration, clip.id);
+      this.drag.snappedTo = snapped.snappedTo;
+      if (zone === 'move') {
+        this.drag.clip = { ...clip, start: snapped.time };
+        // Changement de piste en direct (haut / bas).
+        const lane = laneAt(ev.clientY - rect.top - RULER_HEIGHT, TRACK_HEIGHT, this.engine.tracks.length);
+        this.engine.moveTrack(track.id, lane);
+      } else if (zone === 'trim') {
+        this.drag.clip = trimClip(clip, edge, snapped.time, sr, track.buffer.length);
       } else {
-        const others = this.engine.tracks
-          .filter((t) => t.id !== track.id)
-          .map((t) => ({ start: t.startTime, end: t.end }));
-        const candidates = snapCandidates({
-          position: this.engine.position,
-          otherClips: others,
-          gridStep: rulerStep(pps),
-          near: raw,
-        });
-        const snapped = snapStart(raw, track.duration, candidates, SNAP_PIXELS / pps);
-        Object.assign(this.drag, { start: snapped.time, snappedTo: snapped.snappedTo });
+        const t = Math.max(clip.start, Math.min(clipEnd(clip, sr), snapped.time));
+        if (t !== snapped.time) this.drag.snappedTo = null; // bloqué au bord du clip
+        this.drag.from = Math.min(anchor, t);
+        this.drag.to = Math.max(anchor, t);
       }
-      // Changement de piste en direct (haut / bas).
-      const lane = laneAt(ev.clientY - rect.top - RULER_HEIGHT, TRACK_HEIGHT, this.engine.tracks.length);
-      this.engine.moveTrack(track.id, lane);
       this.invalidate();
     };
     const up = (ev) => {
       this.canvas.removeEventListener('pointermove', move);
       this.canvas.removeEventListener('pointerup', up);
       this.canvas.removeEventListener('pointercancel', up);
-      const { moved, start } = this.drag;
+      const drag = this.drag;
       this.drag = null;
-      this.canvas.style.cursor = '';
-      if (moved) this.engine.setTrackStart(track.id, start);
-      else seekAt(ev.clientX);
+      this.canvas.style.cursor = CURSORS[zone];
+      const replace = (label) =>
+        this.ui.edit(
+          label,
+          () =>
+            this.engine.setClips(
+              track.id,
+              track.clips.map((c) => (c.id === clip.id ? drag.clip : c)),
+            ),
+          before,
+        );
+      if (!drag.moved) {
+        this.setSelection({ trackId: track.id, clipId: clip.id });
+        seekAt(ev.clientX);
+      } else if (zone === 'move') {
+        replace('Déplacer le clip');
+        this.setSelection({ trackId: track.id, clipId: clip.id });
+      } else if (zone === 'trim') {
+        replace('Rogner le clip');
+        this.setSelection({ trackId: track.id, clipId: clip.id });
+      } else if (drag.to - drag.from >= 1 / sr) {
+        this.setSelection({ trackId: track.id, clipId: clip.id, from: drag.from, to: drag.to });
+      } else {
+        this.setSelection({ trackId: track.id, clipId: clip.id });
+      }
       this.invalidate();
     };
     this.canvas.addEventListener('pointermove', move);

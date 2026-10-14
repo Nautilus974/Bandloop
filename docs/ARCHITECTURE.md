@@ -6,7 +6,7 @@
 ┌──────────────────────── Processus principal (Node) ─────────────────────────┐
 │ src/main/main.js   fenêtre, protocole app://, sécurité                       │
 │ src/main/ipc.js    dialogues, écriture atomique, presets.json, micro OS      │
-│ src/main/menu.js   menu Fichier (Nouveau, Ouvrir, Enregistrer, Exporter)     │
+│ src/main/menu.js   menus Fichier et Édition (annuler, découper, supprimer)   │
 └──────────────▲───────────────────────────────────────────────────────────────┘
                │ IPC (ipcRenderer.invoke ↔ ipcMain.handle)
 ┌──────────────┴───────── Preload (src/preload/preload.cjs) ───────────────────┐
@@ -18,7 +18,9 @@
 │ app.js                  relie moteur, moteur vocal, presets et interface     │
 │ audio/                  AudioEngine (transport, master, limiteur, VU),       │
 │                         arrange (ordre des pistes, aimantation des clips),   │
-│                         Track (tranche de console), mixage, pics, planif.    │
+│                         clips (montage non destructif, purs), history        │
+│                         (annuler / rétablir), Track (tranche de console),    │
+│                         mixage, pics, planification                          │
 │ vocal/                  moteur vocal — voir MOTEUR-VOCAL.md                  │
 │   settings.js           schéma des réglages, validation                      │
 │   theory.js             gammes, tonalités, intervalles                       │
@@ -69,8 +71,8 @@ les calculs lourds et un AudioWorklet pour le bitcrush.
 4. **Graphe audio.**
 
    ```
-   AudioBufferSourceNode ─ input ─ [FxChain : effets temps réel] ─ StereoPanner ─ fader ─┐
-         (audio d'origine ou rendu vocal)                       (volume × mute × solo)   │
+   sources (une par clip) ─ input ─ [FxChain : effets temps réel] ─ StereoPanner ─ fader ─┐
+   (fenêtres sur l'audio d'origine ou le rendu vocal)            (volume × mute × solo)   │
                                                                                          ├─ master ─ limiteur ─ sortie
    … une tranche par piste …                                                             ┘            └─ analyseurs (VU)
    ```
@@ -87,8 +89,10 @@ les calculs lourds et un AudioWorklet pour le bitcrush.
 - L'horloge de référence est `AudioContext.currentTime`, l'horloge matérielle
   de la carte son.
 - **Play** : on fixe un instant commun `when = currentTime + 50 ms`, et chaque
-  piste appelle `source.start(when, offset)`. Toutes les pistes démarrent au
-  même échantillon.
+  clip de chaque piste est planifié par rapport à cet instant
+  (`source.start(when + décalage, offset, durée)`, voir
+  [MONTAGE.md](MONTAGE.md)). Tout démarre sur la même horloge, à
+  l'échantillon près.
 - **Position** = `positionAuDémarrage + (currentTime − when)`. C'est un calcul,
   pas un compteur, donc il ne dérive pas.
 - **Pause, seek et remplacement de l'audio** (rendu vocal terminé) : on arrête
@@ -119,27 +123,31 @@ les calculs lourds et un AudioWorklet pour le bitcrush.
 
 ## Tests
 
-`npm test` lance `node:test` (100 tests) sur toute la logique pure :
+`npm test` lance `node:test` (115 tests) sur toute la logique pure :
 
 - transport et mixage ;
 - théorie musicale, détection de hauteur, correction, PSOLA et rendu vocal
   complet, mesurés sur des signaux synthétiques ;
 - courbes d'effets et schéma des réglages ;
 - les 24 presets : catégories, ordre, valeurs non corrigées par la validation ;
-- `PresetStore` : création, modification, suppression, persistance.
+- `PresetStore` : création, modification, suppression, persistance ;
+- montage des clips (découpe, suppression, rognage, fondus) et historique
+  d'annulation ;
+- format de projet, codecs FLAC / WAV / ZIP, limiteur.
 
 Les modules Web Audio et DOM restent fins. `npm run test:e2e` lance la vraie
 application Electron (Playwright, micro simulé) pour vérifier l'enregistrement :
 calage à l'échantillon, prise au micro, autorisations, déplacement des pistes,
-cycle sauvegarde → relance → réouverture identique, export WAV/MP3 et erreurs
-disque. Voir [PROJETS-ET-EXPORT.md](PROJETS-ET-EXPORT.md).
+montage des clips vérifié à l'échantillon, cycle sauvegarde → relance →
+réouverture identique, export WAV/MP3 et erreurs disque. Voir
+[PROJETS-ET-EXPORT.md](PROJETS-ET-EXPORT.md) et [MONTAGE.md](MONTAGE.md).
 
 ## Évolutions prévues
 
-| Étape | Sujet                                          | Piste technique                                                                      |
-| ----- | ---------------------------------------------- | ------------------------------------------------------------------------------------ |
-| 1     | Découper les clips, annuler                    | Modèle `Clip` séparé de `Track`, `start(when, offset, duration)` ; pile d'annulation |
-| 2     | Punch-in et prises en boucle                   | Remplacement d'un passage, plusieurs prises par piste (modèle `Clip`)                |
-| 3     | Correction en direct                           | YIN + PSOLA dans un AudioWorklet (les briques `dsp/` sont déjà sans DOM)             |
-| 4     | Annuler / rétablir, enregistrement automatique | Pile de commandes sur le moteur ; sauvegarde de secours périodique                   |
-| 5     | Import / export de presets                     | Fichier `.blpreset` (JSON validé par `normalizeSettings`)                            |
+| Étape | Sujet                                          | Piste technique                                                                  |
+| ----- | ---------------------------------------------- | -------------------------------------------------------------------------------- |
+| 1     | Clips entre pistes, copier / coller, fondus    | Clips référençant une source audio partagée (et non l'audio de leur piste)       |
+| 2     | Punch-in et prises en boucle                   | Remplacement d'un passage, plusieurs prises par piste (modèle de clips en place) |
+| 3     | Correction en direct                           | YIN + PSOLA dans un AudioWorklet (les briques `dsp/` sont déjà sans DOM)         |
+| 4     | Annulation étendue, enregistrement automatique | Mixage et effets dans l'historique ; sauvegarde de secours périodique            |
+| 5     | Import / export de presets                     | Fichier `.blpreset` (JSON validé par `normalizeSettings`)                        |

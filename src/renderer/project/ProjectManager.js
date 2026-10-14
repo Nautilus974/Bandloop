@@ -1,5 +1,6 @@
 // Gestion du projet courant : nouveau, ouvrir, enregistrer, enregistrer sous,
 // suivi des modifications non enregistrées (titre de fenêtre avec « * »).
+import { newClipId, rescaleClips } from '../audio/clips.js';
 import { encodeFlac, floatToInt } from './flac.js';
 import {
   audioExtension,
@@ -163,6 +164,7 @@ export class ProjectManager extends EventTarget {
         pan: track.pan,
         muted: track.muted,
         solo: track.solo,
+        clips: track.clips,
         audio: {
           path,
           origin: track.origin?.kind === 'file' ? 'file' : 'take',
@@ -259,6 +261,7 @@ export class ProjectManager extends EventTarget {
       this.restoring = false;
     }
     this.#emit();
+    this.dispatchEvent(new Event('load'));
     return true;
   }
 
@@ -292,11 +295,29 @@ export class ProjectManager extends EventTarget {
       this.path = path;
       this.dirty = false;
       this.#emit();
+      this.dispatchEvent(new Event('load'));
       if (warnings.length) this.ask.error('Projet ouvert partiellement', warnings.join('\n'));
       return true;
     } finally {
       this.ask.progress(null);
     }
+  }
+
+  /**
+   * Clips d'une piste ouverte. L'audio décodé peut avoir une autre fréquence que
+   * lors de l'enregistrement (décodage rééchantillonné à la fréquence de la
+   * carte son) : les positions en échantillons sont alors converties.
+   */
+  #restoreClips(t, buffer) {
+    const fromRate = t.audio.sampleRate ?? buffer.sampleRate;
+    return rescaleClips(t.clips, fromRate, buffer.sampleRate, buffer.length)
+      .filter((c) => c.offset < buffer.length)
+      .map((c) => ({
+        id: newClipId(),
+        start: c.start,
+        offset: c.offset,
+        length: Math.max(1, Math.min(c.length, buffer.length - c.offset)),
+      }));
   }
 
   async #restore(project, audio) {
@@ -327,6 +348,7 @@ export class ProjectManager extends EventTarget {
           origin,
           color: t.color ?? undefined,
         });
+        if (t.clips) this.engine.setClips(track.id, this.#restoreClips(t, buffer));
         this.engine.setVolume(track.id, t.volumeDb);
         this.engine.setPan(track.id, t.pan);
         if (t.muted) this.engine.setMuted(track.id, true);
