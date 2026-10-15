@@ -53,6 +53,18 @@ export const icons = {
   scissors: icon(
     '<circle cx="5.5" cy="5.5" r="2.25"/><circle cx="5.5" cy="14.5" r="2.25"/><path d="M7.4 6.8L16 14M7.4 13.2L16 6"/>',
   ),
+  more: icon(
+    '<circle cx="4.75" cy="10" r="1.5"/><circle cx="10" cy="10" r="1.5"/><circle cx="15.25" cy="10" r="1.5"/>',
+    {
+      fill: true,
+    },
+  ),
+  pencil: icon('<path d="M12.8 4.2l3 3L7.5 15.5 4 16l.5-3.5z"/><path d="M11 6l3 3"/>'),
+  copy: icon(
+    '<rect x="7" y="7" width="9.5" height="9.5" rx="1.6"/><path d="M13 7V5a1.5 1.5 0 0 0-1.5-1.5h-6A1.5 1.5 0 0 0 4 5v6.5A1.5 1.5 0 0 0 5.5 13H7"/>',
+  ),
+  arrowUp: icon('<path d="M10 16V4.5M5.5 9L10 4.5 14.5 9"/>'),
+  arrowDown: icon('<path d="M10 4v11.5M5.5 11l4.5 4.5 4.5-4.5"/>'),
   power: icon('<path d="M10 3.5V10"/><path d="M6.2 5.8a6 6 0 1 0 7.6 0"/>'),
 };
 

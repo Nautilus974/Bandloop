@@ -178,3 +178,23 @@ test('historique : instantané « avant » fourni par un geste en cours', () => 
   h.undo();
   assert.equal(state.v, 1);
 });
+
+test('historique : commandes (annuler / refaire) mêlées aux instantanés', () => {
+  let state = { clips: [1] };
+  let name = 'Voix';
+  const h = new EditHistory({ capture: () => structuredClone(state), restore: (s) => (state = structuredClone(s)) });
+  h.perform('Découper', () => (state.clips = [1, 2]));
+  name = 'Chant';
+  h.push({ label: 'Renommer la piste', undo: () => (name = 'Voix'), redo: () => (name = 'Chant') });
+  assert.equal(h.undoLabel, 'Renommer la piste');
+  assert.equal(h.undo(), 'Renommer la piste');
+  assert.equal(name, 'Voix');
+  assert.deepEqual(state.clips, [1, 2], 'le montage n’est pas touché');
+  assert.equal(h.undo(), 'Découper');
+  assert.equal(h.redo(), 'Découper');
+  assert.equal(h.redo(), 'Renommer la piste');
+  assert.equal(name, 'Chant');
+  h.undo();
+  h.push({ label: 'Couleur', undo: () => {}, redo: () => {} });
+  assert.equal(h.canRedo, false, 'une nouvelle commande efface « Rétablir »');
+});

@@ -1,9 +1,13 @@
 // Historique d'annulation (Ctrl/⌘+Z, Ctrl/⌘+Maj+Z) des opérations de montage.
 //
-// Chaque opération est enregistrée comme un couple d'instantanés « avant /
-// après » de l'arrangement (ordre des pistes et clips de chaque piste). C'est
-// léger (quelques nombres par clip, jamais d'audio) et robuste : annuler, c'est
-// restaurer l'instantané « avant ».
+// Deux sortes d'entrées :
+// - les opérations de montage (`perform`) : un couple d'instantanés « avant /
+//   après » de l'arrangement (ordre des pistes et clips de chaque piste). C'est
+//   léger (quelques nombres par clip, jamais d'audio) et robuste : annuler,
+//   c'est restaurer l'instantané « avant » ;
+// - les commandes (`push`) : une paire de fonctions « annuler / refaire », pour
+//   ce qu'un instantané ne décrit pas (supprimer ou dupliquer une piste,
+//   la renommer, changer sa couleur).
 
 export class EditHistory extends EventTarget {
   /**
@@ -52,10 +56,22 @@ export class EditHistory extends EventTarget {
     return result;
   }
 
+  /**
+   * Enregistre une commande déjà exécutée.
+   * @param {{ label: string, undo: () => void, redo: () => void }} command
+   */
+  push(command) {
+    this.undoStack.push(command);
+    if (this.undoStack.length > this.limit) this.undoStack.shift();
+    this.redoStack = [];
+    this.#emit();
+  }
+
   undo() {
     const entry = this.undoStack.pop();
     if (!entry) return null;
-    this.restoreFn(entry.before);
+    if (entry.undo) entry.undo();
+    else this.restoreFn(entry.before);
     this.redoStack.push(entry);
     this.#emit();
     return entry.label;
@@ -64,7 +80,8 @@ export class EditHistory extends EventTarget {
   redo() {
     const entry = this.redoStack.pop();
     if (!entry) return null;
-    this.restoreFn(entry.after);
+    if (entry.redo) entry.redo();
+    else this.restoreFn(entry.after);
     this.undoStack.push(entry);
     this.#emit();
     return entry.label;

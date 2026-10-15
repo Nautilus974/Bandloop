@@ -37,12 +37,20 @@ function modal(content, onSubmit) {
 }
 
 /** @returns {Promise<string|null>} le texte saisi, ou null si annulé */
-export function promptDialog({ title, label, value = '', confirm = 'Enregistrer', hint = '' }) {
+export function promptDialog({
+  title,
+  label,
+  value = '',
+  confirm = 'Enregistrer',
+  hint = '',
+  emptyError = 'Donne un nom au preset.',
+  maxLength = 40,
+}) {
   const input = h('input', {
     className: 'text-input',
     type: 'text',
     value,
-    maxLength: 40,
+    maxLength,
     required: true,
     spellcheck: false,
   });
@@ -61,7 +69,7 @@ export function promptDialog({ title, label, value = '', confirm = 'Enregistrer'
     () => {
       const text = input.value.trim();
       if (!text) {
-        error.textContent = 'Donne un nom au preset.';
+        error.textContent = emptyError;
         return undefined;
       }
       return text;

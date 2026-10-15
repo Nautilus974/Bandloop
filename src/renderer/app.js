@@ -1,5 +1,5 @@
 // Point d'entrée du renderer : relie le moteur audio, la timeline et les panneaux.
-import { AudioEngine } from './audio/AudioEngine.js';
+import { AudioEngine, TRACK_NAME_MAX } from './audio/AudioEngine.js';
 import { clipAt, clipEnd, deleteRange, splitClipRange, splitClipsAt } from './audio/clips.js';
 import { EditHistory } from './audio/history.js';
 import { ExportManager } from './export/ExportManager.js';
@@ -11,7 +11,7 @@ import { createPresetStorage } from './presets/storage.js';
 import { Recorder } from './record/Recorder.js';
 import { svg } from './ui/dom.js';
 import { AddTrackMenu } from './ui/AddTrackMenu.js';
-import { alertDialog, unsavedDialog } from './ui/Dialog.js';
+import { alertDialog, confirmDialog, promptDialog, unsavedDialog } from './ui/Dialog.js';
 import { ExportDialog } from './ui/ExportDialog.js';
 import { PopupMenu } from './ui/PopupMenu.js';
 import { FxPanel } from './ui/FxPanel.js';
@@ -19,6 +19,7 @@ import { icons, logo } from './ui/icons.js';
 import { Meter } from './ui/Meter.js';
 import { RecordPanel } from './ui/RecordPanel.js';
 import { Timeline } from './ui/Timeline.js';
+import { TRACK_SWATCHES, TrackMenu } from './ui/TrackMenu.js';
 import { formatTime } from './ui/time.js';
 import { TrackPanel } from './ui/TrackPanel.js';
 import { VocalHub } from './vocal/VocalHub.js';
@@ -82,6 +83,8 @@ const ui = {
     history.perform(label, fn, before);
   },
   captureArrangement: () => history.capture(),
+  openTrackMenu: (id, anchor, at) => openTrackMenu(id, anchor, at),
+  renameTrack: (id) => trackActions.rename(id),
   onClipSelection: () => describeSelection(),
 };
 
@@ -611,6 +614,146 @@ project.addEventListener('load', () => {
   timeline.setSelection(null);
 });
 
+// --- Menu d'actions d'une piste ---------------------------------------------
+//
+// Toutes ces actions visent une piste précise (celle du menu), pas forcément la
+// piste sélectionnée. Elles sont annulables (Ctrl/⌘+Z) et refusées pendant un
+// enregistrement, comme le reste du montage.
+
+const trackBlocked = () => {
+  if (!recorder.busy && !engine.locked) return false;
+  setStatus('Impossible de modifier les pistes pendant un enregistrement.', true);
+  return true;
+};
+
+/** Effets vocaux d'une piste, pour les recopier (duplication) ou les remettre (annulation). */
+function vocalSnapshot(id) {
+  const state = hub.getState(id);
+  return state && { settings: structuredClone(state.settings), presetId: state.presetId, bypass: state.bypass };
+}
+function applyVocal(id, vocal) {
+  if (!vocal) return;
+  hub.setSettings(id, structuredClone(vocal.settings), { presetId: vocal.presetId });
+  if (vocal.bypass) hub.setBypass(id, true);
+}
+
+/** « Voix » → « Voix (copie) », puis « Voix (copie 2) »… */
+function copyName(name) {
+  const base = name.replace(/ \(copie(?: \d+)?\)$/, '');
+  const taken = new Set(engine.tracks.map((t) => t.name));
+  for (let n = 1; ; n++) {
+    const suffix = n === 1 ? ' (copie)' : ` (copie ${n})`;
+    const candidate = base.slice(0, TRACK_NAME_MAX - suffix.length) + suffix;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+const trackActions = {
+  async rename(id) {
+    const track = engine.getTrack(id);
+    if (!track || trackBlocked()) return;
+    const name = await promptDialog({
+      title: 'Renommer la piste',
+      label: 'Nom de la piste',
+      value: track.name,
+      confirm: 'Renommer',
+      emptyError: 'Donne un nom à la piste.',
+      maxLength: TRACK_NAME_MAX,
+    });
+    if (name === null || trackBlocked()) return;
+    const before = track.name;
+    if (!engine.renameTrack(id, name)) return;
+    const after = track.name;
+    history.push({
+      label: 'Renommer la piste',
+      undo: () => engine.renameTrack(id, before),
+      redo: () => engine.renameTrack(id, after),
+    });
+    setStatus(`Piste renommée : « ${after} ».`);
+  },
+
+  duplicate(id) {
+    const source = engine.getTrack(id);
+    if (!source || trackBlocked()) return;
+    const vocal = vocalSnapshot(id);
+    const copy = engine.duplicateTrack(id, copyName(source.name));
+    if (!copy) return;
+    applyVocal(copy.id, vocal);
+    ui.select(copy.id);
+    let detached = null;
+    history.push({
+      label: 'Dupliquer la piste',
+      undo: () => (detached = engine.detachTrack(copy.id)),
+      redo: () => {
+        if (!detached) return;
+        engine.attachTrack(detached.track, detached.index);
+        applyVocal(copy.id, vocal);
+      },
+    });
+    setStatus(`« ${source.name} » dupliquée : « ${copy.name} ».`);
+  },
+
+  async remove(id) {
+    const track = engine.getTrack(id);
+    if (!track || trackBlocked()) return;
+    // Piste avec de l'audio : confirmation (et la suppression reste annulable).
+    if (track.clips.length > 0) {
+      const ok = await confirmDialog({
+        title: 'Supprimer la piste ?',
+        message: `« ${track.name} » sera retirée du projet avec son audio, son montage et ses effets. Tu pourras l’annuler avec ${MOD}Z.`,
+        confirm: 'Supprimer',
+        danger: true,
+      });
+      if (!ok || trackBlocked()) return;
+    }
+    const vocal = vocalSnapshot(id);
+    let detached = engine.detachTrack(id);
+    if (!detached) return;
+    history.push({
+      label: 'Supprimer la piste',
+      undo: () => {
+        engine.attachTrack(detached.track, detached.index);
+        applyVocal(id, vocal);
+      },
+      redo: () => (detached = engine.detachTrack(id) ?? detached),
+    });
+    setStatus(`Piste « ${track.name} » supprimée (${MOD}Z pour l’annuler).`);
+  },
+
+  setColor(id, color) {
+    const track = engine.getTrack(id);
+    if (!track || trackBlocked()) return;
+    const before = track.color;
+    if (!engine.setTrackColor(id, color)) return;
+    history.push({
+      label: 'Changer la couleur',
+      undo: () => engine.setTrackColor(id, before),
+      redo: () => engine.setTrackColor(id, color),
+    });
+    const name = TRACK_SWATCHES.find((s) => s.value === color)?.label.toLowerCase() ?? color;
+    setStatus(`« ${track.name} » en ${name}.`);
+  },
+
+  openFx(id) {
+    if (trackBlocked()) return;
+    ui.openFx(id);
+  },
+
+  move(id, delta) {
+    const index = engine.tracks.findIndex((t) => t.id === id);
+    if (index < 0 || trackBlocked()) return;
+    ui.edit(delta < 0 ? 'Monter la piste' : 'Descendre la piste', () => engine.moveTrack(id, index + delta));
+  },
+};
+
+const trackMenu = new TrackMenu(engine, trackActions);
+
+function openTrackMenu(id, anchor, at) {
+  if (trackBlocked()) return;
+  trackMenu.openFor(id, anchor, at);
+}
+window.trackActions = trackActions; // débogage et tests
+
 // --- Réactions aux changements du moteur ------------------------------------
 
 engine.addEventListener('state', () => {
@@ -652,6 +795,8 @@ hub.addEventListener('change', () => {
 let lastRecorderState = recorder.state;
 recorder.addEventListener('change', () => {
   const { state } = recorder;
+  // Un enregistrement commence : le menu d'une piste ne doit pas rester ouvert.
+  if (recorder.busy) trackMenu.close();
   const rec = state === 'recording' || state === 'finishing';
   document.body.classList.toggle('is-recording', rec);
   $('#btn-record').classList.toggle('armed', state === 'countdown' || rec);

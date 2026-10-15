@@ -18,6 +18,12 @@ vocaux et des presets. Construit avec **Electron** et la **Web Audio API**.
   temps (aimanté sur 0, la tête de lecture, les autres clips et la grille ;
   Maj pour un placement libre), en haut ou en bas pour changer la piste de
   place ; poignée ⠿ sur chaque piste ; bouton « + » sous la dernière piste.
+- **Menu d'une piste** (bouton « … » ou clic droit, dans le panneau ou la
+  timeline) : renommer (aussi par double-clic sur le nom), dupliquer avec
+  audio, montage, preset et réglages, couleur (palette de 10), effets et
+  preset vocal, monter / descendre, supprimer (confirmation si la piste
+  contient de l'audio). Tout est annulable avec Ctrl/⌘+Z ; bloqué pendant un
+  enregistrement ; nom et couleur enregistrés dans le projet.
 - **Montage des clips** (non destructif) : découper (S ou Ctrl/⌘+K), sélectionner
   une portion en glissant (début, fin et durée affichés), la supprimer (Suppr :
   le reste se recolle ; Maj+Suppr : un blanc reste), rogner les bords, déplacer
@@ -69,14 +75,14 @@ morceau** (ici La mineur, c'est-à-dire `La` + `Mineur naturel`).
 
 ## Scripts
 
-| Commande           | Rôle                                                                                                                                                       |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm start`        | Lance l'app en développement                                                                                                                               |
-| `npm test`         | Tests unitaires (`node:test`, sans Electron)                                                                                                               |
-| `npm run test:e2e` | Tests de bout en bout dans l'app Electron (enregistrement, déplacement, montage, projets, export) ; sous Linux sans écran : `xvfb-run -a npm run test:e2e` |
-| `npm run samples`  | Génère des WAV de démo                                                                                                                                     |
-| `npm run dist:mac` | Construit un `.dmg` (à lancer sur un Mac)                                                                                                                  |
-| `npm run dist:win` | Construit un installeur `.exe` (NSIS)                                                                                                                      |
+| Commande           | Rôle                                                                                                                                                                                          |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm start`        | Lance l'app en développement                                                                                                                                                                  |
+| `npm test`         | Tests unitaires (`node:test`, sans Electron)                                                                                                                                                  |
+| `npm run test:e2e` | Tests de bout en bout dans l'app Electron (enregistrement, déplacement, montage, menu des pistes, barre supérieure, projets, export) ; sous Linux sans écran : `xvfb-run -a npm run test:e2e` |
+| `npm run samples`  | Génère des WAV de démo                                                                                                                                                                        |
+| `npm run dist:mac` | Construit un `.dmg` (à lancer sur un Mac)                                                                                                                                                     |
+| `npm run dist:win` | Construit un installeur `.exe` (NSIS)                                                                                                                                                         |
 
 ## Documentation
 

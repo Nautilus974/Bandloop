@@ -94,7 +94,14 @@ opérations.
 
 Sont annulables : découpe, suppression d'une portion ou d'un clip, rognage,
 déplacement d'un clip ou d'une piste dans le temps (souris et Alt+flèches),
-changement d'ordre des pistes (glisser ou poignée).
+changement d'ordre des pistes (glisser, poignée, menu « … »), et les actions du
+menu d'une piste : renommer, dupliquer, changer la couleur, **supprimer**.
+
+Ces actions de piste sont enregistrées comme des commandes (« annuler /
+refaire ») plutôt que comme des instantanés. Une piste supprimée n'est pas
+détruite tant que l'historique la garde : Ctrl/⌘+Z la remet à sa place, avec
+son audio, son montage, son mixage et son preset (les effets vocaux lourds
+sont recalculés).
 
 Dans un champ de texte (nom du projet, tempo), Ctrl/⌘+Z annule la saisie,
 pas le montage.
@@ -155,11 +162,11 @@ pas le montage.
     était calculée dans son contexte d'origine.
   - Les effets temps réel (réverb, delay) sont appliqués après les clips : la
     traîne d'un morceau continue naturellement dans un blanc.
-- **L'annulation ne couvre que l'arrangement** :
+- **L'annulation couvre l'arrangement et les actions du menu d'une piste** :
   - elle ne couvre pas le volume, le pan, le mute ou le solo, les effets et
-    presets, le tempo, ni l'ajout ou la suppression d'une piste ou d'une
-    prise ;
-  - une piste supprimée ne revient pas avec Ctrl+Z ;
+    presets, le tempo, ni l'ajout d'une piste (import, prise micro) ;
+  - une piste supprimée garde son audio en mémoire tant que l'opération est
+    dans l'historique (100 opérations au plus) ;
   - l'historique est vidé à l'ouverture d'un projet ou sur « Nouveau », et
     il n'est pas enregistré dans le projet.
 - **Taille des projets** : le montage étant non destructif, l'audio supprimé

@@ -655,24 +655,31 @@ input[type='range']:active::-webkit-slider-thumb {
   color: var(--accent);
 }
 
-.btn-remove {
-  width: 22px;
+.btn-more {
+  width: 24px;
   height: 22px;
-  opacity: 0;
+  opacity: 0.45;
 }
 
-.btn-remove .icon {
-  width: 14px;
-  height: 14px;
+.btn-more .icon {
+  width: 16px;
+  height: 16px;
 }
 
-.track:hover .btn-remove,
-.btn-remove:focus-visible {
+.track:hover .btn-more,
+.track.selected .btn-more,
+.btn-more:focus-visible,
+.btn-more[aria-expanded='true'] {
   opacity: 1;
 }
 
-.btn-remove:hover {
-  color: var(--danger);
+.btn-more[aria-expanded='true'] {
+  background: var(--bg-4);
+  color: var(--text);
+}
+
+.btn-more:disabled {
+  opacity: 0.2;
 }
 
 .toggle {
@@ -2141,6 +2148,89 @@ body.reordering * {
 
 .menu-item:disabled:hover {
   background: transparent;
+}
+
+/* Menu d'actions d'une piste : plus compact, avec titre et pastilles de couleur. */
+.menu-heading {
+  max-width: 236px;
+  padding: 4px 10px 8px;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.track-menu {
+  min-width: 248px;
+}
+
+.track-menu .menu-item {
+  gap: 10px;
+  padding: 6px 8px;
+}
+
+.track-menu .menu-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+}
+
+.menu-item.danger .menu-title,
+.menu-item.danger .menu-icon {
+  color: var(--danger);
+}
+
+.menu-item.danger:hover,
+.menu-item.danger:focus-visible {
+  background: rgb(255 77 109 / 12%);
+}
+
+.menu-swatches {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 7px 8px 9px 44px;
+}
+
+.menu-swatches-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.menu-swatch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.menu-swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 25%);
+  transition: transform 0.1s;
+}
+
+.menu-swatch:hover {
+  transform: scale(1.15);
+}
+
+.menu-swatch[aria-checked='true'] {
+  box-shadow:
+    0 0 0 2px var(--bg-3),
+    0 0 0 4px var(--swatch);
+}
+
+.menu-swatch:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
 }
 
 /* Indicateur d'activité (enregistrement / ouverture de projet) */

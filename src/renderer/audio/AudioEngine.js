@@ -3,7 +3,7 @@
 // Toutes les pistes sont démarrées sur la même horloge (AudioContext.currentTime)
 // avec une petite avance, ce qui garantit une synchronisation à l'échantillon près.
 import { reorder } from './arrange.js';
-import { sortClips } from './clips.js';
+import { newClipId, sortClips } from './clips.js';
 import { effectiveGain } from './mixing.js';
 import { Track } from './Track.js';
 import { clamp } from './scheduling.js';
@@ -14,8 +14,22 @@ const START_LATENCY = 0.05;
 
 const EDIT_EVENTS = new Set(['tracks', 'mix', 'arrange', 'volume', 'pan']);
 
-// Palette Bandloop : teintes saturées mais lisibles sur fond sombre.
-const TRACK_COLORS = ['#ff7a59', '#2fd4b5', '#a78bfa', '#4cc3ff', '#ff6b9e', '#ffbf47', '#8be36c'];
+// Palette Bandloop : teintes saturées mais lisibles sur fond sombre. Les sept
+// premières sont attribuées à tour de rôle aux nouvelles pistes ; toutes sont
+// proposées dans le menu « Couleur » d'une piste.
+export const TRACK_COLORS = [
+  '#ff7a59',
+  '#2fd4b5',
+  '#a78bfa',
+  '#4cc3ff',
+  '#ff6b9e',
+  '#ffbf47',
+  '#8be36c',
+  '#f25555',
+  '#c4a77d',
+  '#9aa4b5',
+];
+export const TRACK_NAME_MAX = 40;
 
 export class AudioEngine extends EventTarget {
   constructor(ctx = new AudioContext({ latencyHint: 'interactive' })) {
@@ -96,6 +110,80 @@ export class AudioEngine extends EventTarget {
     if (this.state === 'playing') track.start(this.ctx.currentTime, this.position);
     this.#emit('tracks');
     return track;
+  }
+
+  /** Renomme une piste (espaces en trop retirés, 40 caractères au plus). @returns {boolean} changé */
+  renameTrack(id, name) {
+    const track = this.getTrack(id);
+    const clean = String(name ?? '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, TRACK_NAME_MAX);
+    if (!track || !clean || clean === track.name) return false;
+    track.name = clean;
+    this.#emit('tracks');
+    return true;
+  }
+
+  /** @returns {boolean} changé */
+  setTrackColor(id, color) {
+    const track = this.getTrack(id);
+    if (!track || !/^#[0-9a-f]{6}$/i.test(color) || color === track.color) return false;
+    track.color = color;
+    this.#emit('tracks');
+    return true;
+  }
+
+  /**
+   * Duplique une piste juste en dessous : même audio (partagé, non copié),
+   * mêmes clips, même mixage et même couleur. Les effets vocaux sont copiés par
+   * l'appelant (ils appartiennent au moteur vocal).
+   */
+  duplicateTrack(id, name) {
+    if (this.locked) return null;
+    const source = this.getTrack(id);
+    if (!source) return null;
+    const copy = this.addBufferTrack(name, source.buffer, { origin: source.origin, color: source.color });
+    copy.setClips(source.clips.map((c) => ({ ...c, id: newClipId() })));
+    copy.volumeDb = source.volumeDb;
+    copy.setPan(source.pan);
+    copy.muted = source.muted;
+    copy.solo = source.solo;
+    this.tracks = reorder(this.tracks, this.tracks.indexOf(copy), this.tracks.indexOf(source) + 1);
+    this.updateGains();
+    if (this.state === 'playing') copy.start(this.ctx.currentTime, this.position);
+    this.#emit('tracks');
+    this.#emit('mix');
+    return copy;
+  }
+
+  /**
+   * Retire une piste du projet SANS la détruire, pour pouvoir l'y remettre
+   * (annulation d'une suppression).
+   * @returns {{ track: Track, index: number } | null}
+   */
+  detachTrack(id) {
+    if (this.locked) return null;
+    const index = this.tracks.findIndex((t) => t.id === id);
+    if (index < 0) return null;
+    const track = this.tracks[index];
+    track.stop();
+    track.fader.disconnect();
+    this.tracks.splice(index, 1);
+    this.updateGains();
+    if (this.tracks.length === 0) this.stop();
+    this.#emit('tracks');
+    return { track, index };
+  }
+
+  /** Remet une piste retirée par detachTrack, à sa place. */
+  attachTrack(track, index) {
+    if (this.locked || this.tracks.includes(track)) return;
+    track.fader.connect(this.master);
+    this.tracks.splice(Math.max(0, Math.min(index, this.tracks.length)), 0, track);
+    this.updateGains();
+    if (this.state === 'playing') track.start(this.ctx.currentTime, this.position);
+    this.#emit('tracks');
   }
 
   removeTrack(id) {

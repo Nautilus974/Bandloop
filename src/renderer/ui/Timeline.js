@@ -69,6 +69,13 @@ export class Timeline {
     scroller.addEventListener('scroll', () => this.invalidate());
     new ResizeObserver(() => this.invalidate()).observe(scroller);
     this.canvas.addEventListener('pointerdown', (e) => this.#onPointerDown(e));
+    // Clic droit sur une piste : son menu d'actions (sans changer la sélection).
+    this.canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const y = e.clientY - this.canvas.getBoundingClientRect().top - RULER_HEIGHT;
+      const track = y >= 0 ? this.engine.tracks[Math.floor(y / TRACK_HEIGHT)] : null;
+      if (track) this.ui.openTrackMenu?.(track.id, null, { x: e.clientX, y: e.clientY });
+    });
     this.canvas.addEventListener('pointermove', (e) => {
       if (this.drag) return;
       const hit = this.engine.locked ? null : this.#hitTest(e);

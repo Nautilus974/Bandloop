@@ -1,5 +1,6 @@
 // Panneau de pistes (colonne de gauche) : une tranche par piste avec
-// volume, panoramique, mute, solo, accès aux effets et suppression.
+// volume, panoramique, mute, solo, accès aux effets et menu d'actions « … »
+// (aussi au clic droit) : renommer, dupliquer, couleur, ordre, supprimer.
 import { laneAt } from '../audio/arrange.js';
 import { formatPan } from '../audio/mixing.js';
 import { MAX_DB, MIN_DB } from '../audio/scheduling.js';
@@ -177,7 +178,16 @@ export class TrackPanel extends EventTarget {
         className: `track${selected ? ' selected' : ''}${this.draggingId === track.id ? ' dragging' : ''}`,
         dataset: { trackId: String(track.id) },
         style: { '--track-color': track.color },
-        onpointerdown: () => this.ui.select(track.id),
+        // Le bouton « … » et le clic droit ouvrent le menu de CETTE piste sans
+        // changer la sélection.
+        onpointerdown: (e) => {
+          if (e.button === 0 && !e.target.closest('.btn-more')) this.ui.select(track.id);
+        },
+        oncontextmenu: (e) => {
+          if (e.target.closest('input, .knob')) return;
+          e.preventDefault();
+          this.ui.openTrackMenu?.(track.id, null, { x: e.clientX, y: e.clientY });
+        },
       },
       h('div', { className: 'track-strip' }),
       h(
@@ -197,7 +207,15 @@ export class TrackPanel extends EventTarget {
             svg(icons.grip),
           ),
           h('span', { className: 'track-index' }, String(index + 1).padStart(2, '0')),
-          h('span', { className: 'track-name', title: track.name }, track.name),
+          h(
+            'span',
+            {
+              className: 'track-name',
+              title: `${track.name} — double-clic pour renommer`,
+              ondblclick: () => this.ui.renameTrack?.(track.id),
+            },
+            track.name,
+          ),
           h(
             'button',
             {
@@ -212,12 +230,15 @@ export class TrackPanel extends EventTarget {
           h(
             'button',
             {
-              className: 'icon-btn btn-remove',
-              title: 'Supprimer la piste',
-              'aria-label': `Supprimer ${track.name}`,
-              onclick: () => engine.removeTrack(track.id),
+              className: 'icon-btn btn-more',
+              title: 'Actions de la piste (ou clic droit)',
+              'aria-label': `Actions de la piste ${track.name}`,
+              'aria-haspopup': 'menu',
+              'aria-expanded': 'false',
+              disabled: this.ui.isRecording?.() ?? false,
+              onclick: (e) => this.ui.openTrackMenu?.(track.id, e.currentTarget),
             },
-            svg(icons.close),
+            svg(icons.more),
           ),
         ),
         h(
