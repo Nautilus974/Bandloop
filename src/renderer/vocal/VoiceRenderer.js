@@ -2,6 +2,8 @@
 // quel dans le Web Worker (voice-worker.js) ou, à défaut, sur le thread principal.
 // Garde en cache, par piste, la voix mono, son analyse de hauteur et ses marques
 // PSOLA : seuls les réglages changent d'un rendu à l'autre.
+import { cleanActive } from './clean.js';
+import { cleanVoice } from './dsp/denoise.js';
 import { analyzePitch } from './dsp/pitch.js';
 import { findPitchMarks } from './dsp/psola.js';
 import { renderVoice } from './dsp/render.js';
@@ -30,8 +32,26 @@ export class VoiceRenderer {
     return entry;
   }
 
-  render(trackId, settings, tonality) {
+  /**
+   * Nettoyage (s'il est actif) PUIS étage de hauteur sur la voix nettoyée.
+   * L'analyse de hauteur et les marques PSOLA restent celles de la voix
+   * d'origine : le nettoyage est à phase nulle, la voix nettoyée y reste alignée
+   * échantillon par échantillon, et on évite de refaire l'analyse (la partie
+   * la plus longue) à chaque réglage de nettoyage.
+   */
+  render(trackId, settings, tonality, clean = null) {
     const entry = this.analyze(trackId);
-    return renderVoice(entry.mono, entry.analysis, settings, tonality, entry.marks);
+    let source = entry.mono;
+    let cleanInfo = null;
+    if (clean && cleanActive(clean)) {
+      const signature = JSON.stringify(clean);
+      if (entry.cleanSignature !== signature) {
+        const result = cleanVoice(entry.mono, entry.sampleRate, clean);
+        Object.assign(entry, { cleanSignature: signature, cleaned: result.signal, cleanInfo: result.info });
+      }
+      source = entry.cleaned;
+      cleanInfo = entry.cleanInfo;
+    }
+    return { ...renderVoice(source, entry.analysis, settings, tonality, entry.marks), cleanInfo };
   }
 }

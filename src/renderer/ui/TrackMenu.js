@@ -14,7 +14,8 @@ export class TrackMenu extends PopupMenu {
    * @param {import('../audio/AudioEngine.js').AudioEngine} engine
    * @param {{
    *   rename: (id: number) => void, duplicate: (id: number) => void, remove: (id: number) => void,
-   *   setColor: (id: number, color: string) => void, openFx: (id: number) => void, move: (id: number, delta: number) => void,
+   *   setColor: (id: number, color: string) => void, openFx: (id: number) => void, cleanup: (id: number) => void,
+   *   move: (id: number, delta: number) => void,
    * }} actions
    */
   constructor(engine, actions) {
@@ -46,6 +47,12 @@ export class TrackMenu extends PopupMenu {
             pick: (color) => actions.setColor(id, color),
           },
           { icon: svg(icons.sliders), title: 'Effets et preset vocal', run: () => actions.openFx(id) },
+          {
+            icon: svg(icons.sparkle),
+            title: 'Nettoyage de la voix',
+            hint: 'Souffle, ronflement, silences, sifflantes',
+            run: () => actions.cleanup(id),
+          },
           'separator',
           {
             icon: svg(icons.arrowUp),

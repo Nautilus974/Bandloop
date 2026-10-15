@@ -14,9 +14,14 @@ self.onmessage = ({ data }) => {
       self.postMessage({ id: data.id, phase: 'analyzing' });
       renderer.analyze(data.trackId);
       self.postMessage({ id: data.id, phase: 'rendering' });
-      const { left, right, curves } = renderer.render(data.trackId, data.settings, data.tonality);
+      const { left, right, curves, cleanInfo } = renderer.render(
+        data.trackId,
+        data.settings,
+        data.tonality,
+        data.clean,
+      );
       const { inMidi, noteMidi, outMidi } = curves;
-      self.postMessage({ id: data.id, ok: true, left, right, curves }, [
+      self.postMessage({ id: data.id, ok: true, left, right, curves, cleanInfo }, [
         left.buffer,
         right.buffer,
         inMidi.buffer,

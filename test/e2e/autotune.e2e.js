@@ -56,7 +56,7 @@ const vocal = () =>
     };
   });
 const idle = () => win.evaluate(() => hub.whenIdle());
-const section = () => win.locator('.fx-section', { hasText: 'Correction de voix' });
+const section = () => win.locator('[data-section="pitch"]');
 /** Place un curseur à une position 0..1 (comme un glisser de l'utilisateur). */
 const setSlider = (label, t) =>
   section()

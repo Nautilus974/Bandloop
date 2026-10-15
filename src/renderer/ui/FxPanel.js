@@ -1,4 +1,5 @@
 // Panneau latéral d'effets vocaux de la piste sélectionnée :
+// nettoyage de la voix (réduction de bruit, passe-haut, gate, de-esser),
 // presets par catégories, correction de voix (vitesse, intensité, vibrato,
 // écoute A/B, tonalité du morceau ou propre à la piste, harmonies, note chantée
 // et note visée), transposition, harmonies, vocodeur, bourdon et chaîne
@@ -7,6 +8,7 @@
 // Toute modification passe par ui.recordVocal : elle est annulable (Ctrl/⌘+Z)
 // et refusée pendant un enregistrement (le panneau est alors grisé).
 import { clipEnd } from '../audio/clips.js';
+import { CLEAN_PARAMS, MIN_PROFILE_SECONDS } from '../vocal/clean.js';
 import { formatPan } from '../audio/mixing.js';
 import { USER_CATEGORY } from '../presets/PresetStore.js';
 import { FX_CATALOG, FX_TYPES } from '../vocal/fx/catalog.js';
@@ -28,6 +30,7 @@ import { paramRow, toggleSwitch } from './controls.js';
 import { confirmDialog, promptDialog } from './Dialog.js';
 import { h, svg } from './dom.js';
 import { icons } from './icons.js';
+import { formatTime } from './time.js';
 
 const param = (list, key, overrides = {}) => ({ ...list.find((p) => p.key === key), ...overrides });
 
@@ -55,6 +58,8 @@ const KEEP_VIBRATO = param(PITCH_PARAMS, 'keepVibrato');
 const HARMONY_MASTER = { ...HARMONY_LEVEL };
 /** Nom de note à la française : 60 = Do3. */
 export const noteName = (midi) => `${NOTE_NAMES[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 2}`;
+/** Nombre arrondi avec un vrai signe moins (affichage des niveaux en dB). */
+const signed = (v) => String(Math.round(v)).replace('-', '−');
 /** Ligne de réglage avec une colonne de libellé plus large. */
 const wide = (row) => (row.classList.add('param-wide'), row);
 const PITCH_VIEW_SECONDS = 4; // fenêtre de l'affichage des hauteurs, centrée sur la tête
@@ -118,7 +123,7 @@ export class FxPanel {
     this.presets = presets;
     this.ui = ui;
     this.category = 'essentials';
-    this.collapsed = new Set(['vocoder', 'drone']);
+    this.collapsed = new Set(['vocoder', 'drone', 'clean']);
 
     hub.addEventListener('status', (e) => {
       if (e.detail.trackId === this.trackId) this.#renderStatus();
@@ -190,6 +195,7 @@ export class FxPanel {
     const track = this.engine.getTrack(this.trackId);
     const scrollTop = this.el.querySelector('.fx-body')?.scrollTop ?? 0;
     this.statusChip = h('span', { className: 'fx-status' });
+    this.abButtons = [];
     this.presetBar = h('div', { className: 'preset-bar' });
 
     const header = h(
@@ -257,6 +263,7 @@ export class FxPanel {
             'Enregistrement en cours : les réglages sont bloqués jusqu’à la fin de la prise.',
           )
         : null,
+      this.#cleanSection(),
       this.#presetSection(),
       this.#correctionSection(),
       this.#timbreSection(),
@@ -282,6 +289,7 @@ export class FxPanel {
     const canCompare = this.state.signature !== 'off' && !!this.state.rendered && !this.locked;
     for (const b of this.abButtons ?? []) b.disabled = !canCompare;
     this.lastPitchKey = null;
+    this.#refreshCleanInfo();
   }
 
   /** Section repliable, avec interrupteur optionnel dans l'en-tête. */
@@ -315,7 +323,10 @@ export class FxPanel {
     );
     const section = h(
       'section',
-      { className: `fx-section${collapsed ? ' collapsed' : ''}${onToggle && !enabled ? ' disabled' : ''}` },
+      {
+        className: `fx-section${collapsed ? ' collapsed' : ''}${onToggle && !enabled ? ' disabled' : ''}`,
+        dataset: { section: id },
+      },
       head,
       h(
         'div',
@@ -502,17 +513,15 @@ export class FxPanel {
 
   // ------------------------------------------------------------------ tonalité et hauteur
 
-  // ------------------------------------------------------------------ correction de voix
-
-  #correctionSection() {
-    const { pitch, harmony } = this.settings;
+  /**
+   * Écoute A/B (commune à la correction et au nettoyage) : A = voix traitée,
+   * B = voix brute. Simple écoute, rien n'est modifié ni exporté autrement.
+   */
+  #abRow(labelA) {
     const state = this.state;
-    const k = (key) => ({ key });
-
-    // Écoute A/B : simple écoute, rien n'est modifié.
     const canCompare = state.signature !== 'off' && !!state.rendered;
-    this.abButtons = [];
-    const ab = h(
+    this.abButtons ??= [];
+    return h(
       'div',
       { className: 'ab-row' },
       h('span', { className: 'param-label' }, 'Écoute'),
@@ -521,34 +530,257 @@ export class FxPanel {
         {
           className: 'segmented ab-switch',
           role: 'radiogroup',
-          'aria-label': 'Comparer la voix corrigée et la voix brute',
+          'aria-label': `Comparer la voix ${labelA.toLowerCase()} et la voix brute`,
           title: canCompare
-            ? 'Compare à l’oreille, pendant la lecture. Simple écoute : l’export et le projet gardent la voix corrigée.'
-            : 'Disponible quand la correction (ou un autre effet de hauteur) est calculée.',
+            ? 'Compare à l’oreille, pendant la lecture. Simple écoute : l’export et le projet gardent la voix traitée.'
+            : 'Disponible quand un traitement (nettoyage, correction…) est calculé.',
         },
         [
-          [false, 'A', 'Corrigée'],
+          [false, 'A', labelA],
           [true, 'B', 'Brute'],
-        ]
-          .map(([raw, letter, label]) =>
-            h(
-              'button',
-              {
-                role: 'radio',
-                'aria-checked': String(state.compareRaw === raw),
-                disabled: !canCompare,
-                onclick: () => {
-                  this.hub.setCompare(this.trackId, raw);
-                  this.render();
-                },
+        ].map(([raw, letter, label]) => {
+          const b = h(
+            'button',
+            {
+              role: 'radio',
+              'aria-checked': String(state.compareRaw === raw),
+              disabled: !canCompare,
+              onclick: () => {
+                this.hub.setCompare(this.trackId, raw);
+                this.render();
               },
-              h('b', {}, letter),
-              ` ${label}`,
-            ),
-          )
-          .map((b) => (this.abButtons.push(b), b)),
+            },
+            h('b', {}, letter),
+            ` ${label}`,
+          );
+          this.abButtons.push(b);
+          return b;
+        }),
       ),
     );
+  }
+
+  /** Ouvre une section (depuis le menu d'une piste) et la met en évidence. */
+  reveal(id) {
+    this.collapsed.delete(id);
+    this.render();
+    const section = this.el.querySelector(`[data-section="${id}"]`);
+    if (!section) return;
+    section.scrollIntoView({ block: 'start' });
+    section.classList.remove('flash');
+    void section.offsetWidth;
+    section.classList.add('flash');
+  }
+
+  // ------------------------------------------------------------------ nettoyage de la voix
+
+  /** Modification du nettoyage (annulable). */
+  #editClean(mutate, { structural = false, label = 'Modifier le nettoyage', key } = {}) {
+    const next = structuredClone(this.state.clean);
+    mutate(next);
+    const done = this.#record(label, () => this.hub.setClean(this.trackId, next), key && `clean.${key}`);
+    if (structural || !done) this.render();
+  }
+
+  /** Carte d'un outil de nettoyage : interrupteur et réglages. */
+  #cleanCard(group, title, rows, extra = []) {
+    const c = this.state.clean[group];
+    return h(
+      'div',
+      { className: `sub-card${c.enabled ? '' : ' off'}`, dataset: { tool: group } },
+      h(
+        'div',
+        { className: 'sub-card-head' },
+        h('span', { className: 'param-label' }, title),
+        toggleSwitch({
+          checked: c.enabled,
+          label: `Activer : ${title}`,
+          onChange: (v) =>
+            this.#editClean((n) => (n[group].enabled = v), {
+              structural: true,
+              label: `${v ? 'Activer' : 'Désactiver'} : ${title.toLowerCase()}`,
+            }),
+        }),
+      ),
+      ...rows,
+      ...extra,
+    );
+  }
+
+  #cleanSection() {
+    const { clean } = this.state;
+    const P = CLEAN_PARAMS;
+    const row = (group, key, label, opts = {}) => {
+      const def = { ...P[group].find((p) => p.key === key), ...opts };
+      const r = paramRow(def, clean[group][key], (v) =>
+        this.#editClean((n) => (n[group][key] = v), { label, key: `${group}.${key}` }),
+      );
+      return r;
+    };
+
+    // Bruit de fond : intensité et empreinte (auto ou zone choisie).
+    const amount = row('noise', 'amount', 'Intensité de la réduction de bruit', {
+      format: (v) => `${v <= 30 ? 'Léger' : v <= 70 ? 'Moyen' : 'Fort'} · ${v} %`,
+    });
+    amount.classList.add('param-hero');
+    amount.append(h('div', { className: 'param-scale' }, h('span', {}, 'Léger'), h('span', {}, 'Fort')));
+    const profile = clean.noise.profile;
+    this.cleanInfoEls = {
+      profile: h('span', { className: 'profile-text' }),
+      warn: h('p', { className: 'clean-warn', hidden: true }),
+      gate: h('p', { className: 'fx-caption' }),
+      fit: h(
+        'button',
+        {
+          className: 'btn btn-small',
+          title: 'Place le seuil 8 dB au-dessus du bruit restant mesuré par le dernier calcul.',
+          onclick: () => this.#fitGate(),
+        },
+        'Régler sur le bruit',
+      ),
+    };
+    const profileRow = h(
+      'div',
+      { className: 'profile-row' },
+      this.cleanInfoEls.profile,
+      h(
+        'div',
+        { className: 'segmented profile-mode', role: 'radiogroup', 'aria-label': 'Empreinte du bruit' },
+        h(
+          'button',
+          {
+            role: 'radio',
+            'aria-checked': String(!profile),
+            onclick: () =>
+              this.#editClean((n) => (n.noise.profile = null), {
+                structural: true,
+                label: 'Empreinte du bruit automatique',
+              }),
+          },
+          'Auto',
+        ),
+        h(
+          'button',
+          {
+            role: 'radio',
+            'aria-checked': String(!!profile),
+            title:
+              'Glisse d’abord sur le clip, dans la timeline, pour sélectionner une zone où l’on n’entend que le bruit.',
+            onclick: () => this.#takeSelectionAsProfile(),
+          },
+          'Prendre la sélection',
+        ),
+      ),
+    );
+
+    const hp = row('highpass', 'freq', 'Fréquence du passe-haut');
+    const gate = row('gate', 'threshold', 'Seuil du noise gate');
+    return this.#section(
+      'clean',
+      'Nettoyage de la voix',
+      {
+        enabled: clean.enabled,
+        onToggle: (v) =>
+          this.#editClean((n) => (n.enabled = v), {
+            structural: true,
+            label: v ? 'Activer le nettoyage' : 'Désactiver le nettoyage',
+          }),
+        caption:
+          'Appliqué avant la correction de voix, calculé en arrière-plan. Traitement classique (sans IA) : très efficace sur un bruit de fond constant, sans effet sur les clics, grésillements ou saturations enregistrés.',
+      },
+      this.#abRow('Nettoyée'),
+      this.#cleanCard(
+        'noise',
+        'Bruit de fond (souffle, ronflement, pièce)',
+        [amount, profileRow],
+        [this.cleanInfoEls.warn],
+      ),
+      this.#cleanCard(
+        'highpass',
+        'Passe-haut',
+        [hp],
+        [
+          h(
+            'p',
+            { className: 'fx-caption' },
+            '50-60 Hz : ronflement secteur · 80-100 Hz : voix grave · 120-150 Hz : voix aiguë, bruits de manipulation.',
+          ),
+        ],
+      ),
+      this.#cleanCard('gate', 'Noise gate', [gate], [this.cleanInfoEls.gate, this.cleanInfoEls.fit]),
+      this.#cleanCard('deesser', 'De-esser (sifflantes)', [row('deesser', 'amount', 'Intensité du de-esser')]),
+    );
+  }
+
+  /** Bruit estimé par le dernier calcul : mis à jour sans redessiner le panneau. */
+  #refreshCleanInfo() {
+    const els = this.cleanInfoEls;
+    if (!els?.profile.isConnected || !this.state) return;
+    const { clean, cleanInfo, status } = this.state;
+    const profile = clean.noise.profile;
+    const fresh = cleanInfo && clean.enabled && clean.noise.enabled;
+    const db = cleanInfo?.noiseDb != null ? signed(cleanInfo.noiseDb) : null;
+    if (!fresh || db === null)
+      els.profile.textContent = ['pending', 'analyzing', 'rendering'].includes(status)
+        ? 'Estimation du bruit en cours…'
+        : 'Le bruit sera estimé au prochain calcul.';
+    else if (cleanInfo.source === 'manual')
+      els.profile.textContent = `Zone choisie : ${formatTime(profile.start)} → ${formatTime(profile.end)} · bruit ≈ ${db} dBFS`;
+    else
+      els.profile.textContent = `Auto : ${cleanInfo.seconds.toFixed(1).replace('.', ',')} s de passages calmes · bruit ≈ ${db} dBFS`;
+    els.warn.hidden = !(fresh && cleanInfo.uncertain && !profile);
+    els.warn.textContent =
+      'Peu de vrai silence dans la prise : l’estimation contient sans doute de la voix. Sélectionne dans la timeline une zone de bruit seul (avant la première phrase, par exemple), puis « Prendre la sélection ».';
+    const residual = cleanInfo?.residualDb != null ? signed(cleanInfo.residualDb) : null;
+    els.gate.textContent =
+      residual !== null && clean.enabled
+        ? `Bruit restant avant le gate ≈ ${residual} dBFS : un seuil 6 à 10 dB au-dessus coupe les silences sans toucher aux fins de phrases.`
+        : 'Coupe ce qui reste sous le seuil : les silences entre les phrases.';
+    if (els.fit) els.fit.disabled = residual === null || !clean.enabled || this.locked;
+  }
+
+  /** Seuil du gate : 8 dB au-dessus du bruit restant mesuré. */
+  #fitGate() {
+    const residual = this.state.cleanInfo?.residualDb;
+    if (residual == null) return;
+    const threshold = Math.max(-80, Math.min(-20, Math.round(residual + 8)));
+    this.#editClean(
+      (n) => {
+        n.gate.enabled = true;
+        n.gate.threshold = threshold;
+      },
+      { structural: true, label: 'Régler le seuil du gate' },
+    );
+    this.ui.notify(`Seuil du noise gate réglé à ${signed(threshold)} dB (bruit restant ≈ ${signed(residual)} dBFS).`);
+  }
+
+  #takeSelectionAsProfile() {
+    const range = this.ui.getTrackRange?.(this.trackId);
+    if (!range) {
+      this.ui.notify(
+        'Sélectionne d’abord, dans la timeline, une zone de cette piste où l’on n’entend que le bruit (glisse sur le clip).',
+        true,
+      );
+      return this.render();
+    }
+    if (range.end - range.start < MIN_PROFILE_SECONDS) {
+      this.ui.notify('Zone trop courte : sélectionne au moins 0,15 s de bruit seul.', true);
+      return this.render();
+    }
+    this.#editClean((n) => (n.noise.profile = range), {
+      structural: true,
+      label: 'Empreinte du bruit sur la sélection',
+    });
+    this.ui.notify(`Empreinte du bruit prise de ${formatTime(range.start)} à ${formatTime(range.end)}.`);
+  }
+
+  // ------------------------------------------------------------------ correction de voix
+
+  #correctionSection() {
+    const { pitch, harmony } = this.settings;
+    const k = (key) => ({ key });
+
+    const ab = this.#abRow('Corrigée');
 
     // Note chantée / note visée.
     this.pitchView = h('canvas', { className: 'pitch-view', height: 96 });

@@ -10,6 +10,7 @@ import {
   unpackProject,
 } from '../src/renderer/project/format.js';
 import { createZip } from '../src/renderer/project/zip.js';
+import { normalizeClean } from '../src/renderer/vocal/clean.js';
 import { normalizeSettings } from '../src/renderer/vocal/settings.js';
 
 const settings = normalizeSettings({
@@ -49,6 +50,7 @@ const state = {
         bypass: false,
         settings,
         tonality: { key: 9, scale: 'minor' },
+        clean: normalizeClean({}),
       },
     },
     {
@@ -60,7 +62,18 @@ const state = {
       muted: true,
       solo: false,
       audio: { path: 'audio/02-prise-1.flac', origin: 'take', codec: 'flac', originalName: 'Prise 1', frames: 2000 },
-      vocal: { presetId: null, presetName: null, bypass: true, settings: normalizeSettings({}), tonality: null },
+      vocal: {
+        presetId: null,
+        presetName: null,
+        bypass: true,
+        settings: normalizeSettings({}),
+        tonality: null,
+        clean: normalizeClean({
+          enabled: true,
+          noise: { amount: 70, profile: { start: 0.2, end: 0.9 } },
+          gate: { enabled: true },
+        }),
+      },
     },
   ],
 };
@@ -191,4 +204,20 @@ test('slugify et extension', () => {
   assert.equal(slugify('***'), 'piste');
   assert.equal(audioExtension('Mon Son.MP3'), 'mp3');
   assert.equal(audioExtension('sans-extension'), 'bin');
+});
+
+test('nettoyage de la voix : ancien projet sans réglage → désactivé ; valeurs aberrantes bornées', () => {
+  const raw = (vocal) => ({
+    format: 'bandloop-project',
+    version: 2,
+    tracks: [{ name: 'a', audio: { path: 'audio/a.wav' }, vocal }],
+  });
+  const old = parseManifest(raw({ settings: {} }));
+  assert.equal(old.tracks[0].vocal.clean.enabled, false);
+  const odd = parseManifest(
+    raw({ clean: { enabled: true, highpass: { freq: 9999 }, noise: { amount: -5, profile: { start: 3, end: 1 } } } }),
+  );
+  assert.equal(odd.tracks[0].vocal.clean.highpass.freq, 300);
+  assert.equal(odd.tracks[0].vocal.clean.noise.amount, 0);
+  assert.equal(odd.tracks[0].vocal.clean.noise.profile, null);
 });

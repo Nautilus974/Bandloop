@@ -108,6 +108,17 @@ const ui = {
     );
     return true;
   },
+  /**
+   * Zone sélectionnée dans la timeline sur cette piste, convertie en secondes
+   * DANS L'AUDIO de la piste (pour l'empreinte du bruit). null sans sélection.
+   */
+  getTrackRange(trackId) {
+    const sel = timeline.getSelection();
+    if (!sel?.range || sel.track.id !== trackId) return null;
+    const sr = sel.track.sampleRate;
+    const start = sel.clip.offset / sr + (sel.range.from - sel.clip.start);
+    return { start, end: start + (sel.range.to - sel.range.from) };
+  },
   /** Tonalité du morceau, annulable. */
   setSongTonality(tonality) {
     if (trackBlocked()) return;
@@ -774,6 +785,13 @@ const trackActions = {
   openFx(id) {
     if (trackBlocked()) return;
     ui.openFx(id);
+  },
+
+  /** Ouvre le panneau FX de la piste sur la section « Nettoyage de la voix ». */
+  cleanup(id) {
+    if (trackBlocked()) return;
+    ui.openFx(id);
+    fxPanel.reveal('clean');
   },
 
   move(id, delta) {

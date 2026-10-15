@@ -7,6 +7,7 @@
 //       aucune perte, aucun réencodage, taille minimale ;
 //     - prise micro : FLAC 24 bits (sans perte, ~50-70 % d'un WAV).
 // Le projet se rouvre donc à l'identique même si les fichiers d'origine ont bougé.
+import { normalizeClean } from '../vocal/clean.js';
 import { normalizeSettings, normalizeTonality } from '../vocal/settings.js';
 import { createZip, readZip, ZipError } from './zip.js';
 
@@ -128,6 +129,7 @@ export function parseManifest(raw) {
           bypass: t.vocal?.bypass === true,
           settings: normalizeSettings(t.vocal?.settings ?? {}),
           tonality: t.vocal?.tonality ? normalizeTonality(t.vocal.tonality) : null,
+          clean: normalizeClean(t.vocal?.clean),
         },
       };
     }),

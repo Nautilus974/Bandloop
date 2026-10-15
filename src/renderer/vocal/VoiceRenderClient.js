@@ -45,11 +45,11 @@ export class VoiceRenderClient {
    * @returns {Promise<{left: Float32Array, right: Float32Array, curves: object}>}
    * @param {(phase: string) => void} [onPhase]  'analyzing' puis 'rendering'
    */
-  render(trackId, settings, tonality, onPhase) {
+  render(trackId, settings, tonality, clean, onPhase) {
     return new Promise((resolve, reject) => {
-      const job = { id: this.nextId++, trackId, settings, tonality, resolve, reject, onPhase };
+      const job = { id: this.nextId++, trackId, settings, tonality, clean, resolve, reject, onPhase };
       this.pending.set(job.id, job);
-      if (this.worker) this.worker.postMessage({ type: 'render', id: job.id, trackId, settings, tonality });
+      if (this.worker) this.worker.postMessage({ type: 'render', id: job.id, trackId, settings, tonality, clean });
       else this.#runInline(job);
     });
   }
@@ -60,7 +60,7 @@ export class VoiceRenderClient {
       if (!this.pending.has(job.id)) return;
       try {
         job.onPhase?.('rendering');
-        const result = this.inline.render(job.trackId, job.settings, job.tonality);
+        const result = this.inline.render(job.trackId, job.settings, job.tonality, job.clean);
         this.#onMessage({ id: job.id, ok: true, ...result });
       } catch (err) {
         this.#onMessage({ id: job.id, ok: false, error: String(err?.message ?? err) });
@@ -68,12 +68,12 @@ export class VoiceRenderClient {
     }, 30);
   }
 
-  #onMessage({ id, phase, ok, left, right, curves, error }) {
+  #onMessage({ id, phase, ok, left, right, curves, cleanInfo, error }) {
     const job = this.pending.get(id);
     if (!job) return;
     if (phase) return job.onPhase?.(phase);
     this.pending.delete(id);
-    if (ok) job.resolve({ left, right, curves });
+    if (ok) job.resolve({ left, right, curves, cleanInfo });
     else job.reject(new Error(error));
   }
 }

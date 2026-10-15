@@ -181,6 +181,8 @@ export class ProjectManager extends EventTarget {
           settings: state?.settings ?? {},
           // Tonalité propre à la piste (null : elle suit celle du morceau).
           tonality: state?.tonality ?? null,
+          // Nettoyage de la voix (empreinte du bruit : zone de l'audio, pas de spectre stocké).
+          clean: state?.clean ?? null,
         },
       });
     }
@@ -357,6 +359,7 @@ export class ProjectManager extends EventTarget {
         if (t.solo) this.engine.setSolo(track.id, true);
         const presetId = t.vocal.presetId && this.presets.get(t.vocal.presetId) ? t.vocal.presetId : null;
         if (t.vocal.tonality) this.hub.setTrackTonality(track.id, t.vocal.tonality);
+        if (t.vocal.clean.enabled) this.hub.setClean(track.id, t.vocal.clean);
         this.hub.setSettings(track.id, t.vocal.settings, { presetId });
         if (t.vocal.bypass) this.hub.setBypass(track.id, true);
       }

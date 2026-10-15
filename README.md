@@ -42,6 +42,9 @@ vocaux et des presets. Construit avec **Electron** et la **Web Audio API**.
     intensité 0-100 %, vibrato préservé, écoute A/B corrigée / brute, note
     chantée et note visée, tonalité du morceau ou propre à la piste ;
     annulable (Ctrl/⌘+Z) ;
+  - nettoyage de la voix avant la correction (mini-menu d'une piste) :
+    réduction du bruit de fond (empreinte auto ou choisie), passe-haut, noise
+    gate, de-esser, écoute A/B ;
   - transposition et formants ;
   - jusqu'à 4 harmonies dans la gamme ;
   - vocodeur et bourdon ;
@@ -77,14 +80,14 @@ morceau** (ici La mineur, c'est-à-dire `La` + `Mineur naturel`).
 
 ## Scripts
 
-| Commande           | Rôle                                                                                                                                                                                                              |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm start`        | Lance l'app en développement                                                                                                                                                                                      |
-| `npm test`         | Tests unitaires (`node:test`, sans Electron)                                                                                                                                                                      |
-| `npm run test:e2e` | Tests de bout en bout dans l'app Electron (enregistrement, déplacement, montage, menu des pistes, correction de voix, barre supérieure, projets, export) ; sous Linux sans écran : `xvfb-run -a npm run test:e2e` |
-| `npm run samples`  | Génère des WAV de démo                                                                                                                                                                                            |
-| `npm run dist:mac` | Construit un `.dmg` (à lancer sur un Mac)                                                                                                                                                                         |
-| `npm run dist:win` | Construit un installeur `.exe` (NSIS)                                                                                                                                                                             |
+| Commande           | Rôle                                                                                                                                                                                                                              |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm start`        | Lance l'app en développement                                                                                                                                                                                                      |
+| `npm test`         | Tests unitaires (`node:test`, sans Electron)                                                                                                                                                                                      |
+| `npm run test:e2e` | Tests de bout en bout dans l'app Electron (enregistrement, déplacement, montage, menu des pistes, correction et nettoyage de la voix, barre supérieure, projets, export) ; sous Linux sans écran : `xvfb-run -a npm run test:e2e` |
+| `npm run samples`  | Génère des WAV de démo                                                                                                                                                                                                            |
+| `npm run dist:mac` | Construit un `.dmg` (à lancer sur un Mac)                                                                                                                                                                                         |
+| `npm run dist:win` | Construit un installeur `.exe` (NSIS)                                                                                                                                                                                             |
 
 ## Documentation
 
@@ -98,5 +101,7 @@ morceau** (ici La mineur, c'est-à-dire `La` + `Mineur naturel`).
 - [docs/ENREGISTREMENT.md](docs/ENREGISTREMENT.md) : enregistrement au micro,
   calage et latence, **limites** (latence, qualité du micro, monitoring sans
   écho).
+- [docs/NETTOYAGE.md](docs/NETTOYAGE.md) : nettoyage de la voix, techniques,
+  mesures, et **ce qui marche ou pas** sans IA.
 - [docs/MOTEUR-VOCAL.md](docs/MOTEUR-VOCAL.md) : briques audio de chaque effet,
   algorithmes, presets, **limites de qualité**.

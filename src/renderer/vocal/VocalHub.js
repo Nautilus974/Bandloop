@@ -16,6 +16,7 @@ import {
   normalizeTonality,
   pitchStageSignature,
 } from './settings.js';
+import { cleanActive, cleanSignature, defaultClean, normalizeClean } from './clean.js';
 import { VoiceRenderClient } from './VoiceRenderClient.js';
 
 const RENDER_DEBOUNCE_MS = 250;
@@ -58,6 +59,8 @@ export class VocalHub extends EventTarget {
         status: 'idle', // idle | pending | analyzing | rendering | ready | error
         timer: null,
         tonality: null, // tonalité propre à la piste ; null = suit le morceau
+        clean: defaultClean(), // nettoyage de la voix (avant l'étage de hauteur)
+        cleanInfo: null, // bruit estimé lors du dernier calcul
         rendered: null, // dernier rendu de l'étage de hauteur (AudioBuffer)
         curves: null, // hauteurs chantée / visée / corrigée, pour l'affichage
         compareRaw: false, // écoute A/B : true = voix brute (sans étage de hauteur)
@@ -93,7 +96,16 @@ export class VocalHub extends EventTarget {
   /** Effets audibles sur cette piste ? (pour l'indicateur FX) */
   hasFx(trackId) {
     const s = this.states.get(trackId);
-    return !!s && !s.bypass && !isNeutral(s.settings);
+    return !!s && !s.bypass && (!isNeutral(s.settings) || cleanActive(s.clean));
+  }
+
+  /** Nettoyage de la voix d'une piste (réduction de bruit, passe-haut, gate, de-esser). */
+  setClean(trackId, clean) {
+    const state = this.states.get(trackId);
+    if (!state) return;
+    state.clean = normalizeClean(clean);
+    this.#apply(trackId);
+    this.#emit('change', trackId);
   }
 
   /**
@@ -153,6 +165,7 @@ export class VocalHub extends EventTarget {
       presetId: s.presetId,
       bypass: s.bypass,
       tonality: s.tonality && { ...s.tonality },
+      clean: structuredClone(s.clean),
     };
   }
 
@@ -163,6 +176,7 @@ export class VocalHub extends EventTarget {
     state.presetId = snap.presetId;
     state.bypass = snap.bypass;
     state.tonality = snap.tonality ? normalizeTonality(snap.tonality) : null;
+    state.clean = normalizeClean(snap.clean);
     this.#apply(trackId);
     this.#emit('change', trackId);
   }
@@ -185,13 +199,17 @@ export class VocalHub extends EventTarget {
   #apply(trackId) {
     const state = this.states.get(trackId);
     state.chain.apply(state.bypass ? [] : state.settings.chain);
-    const signature = state.bypass ? 'off' : pitchStageSignature(state.settings, this.trackTonality(trackId));
+    // Nettoyage puis étage de hauteur : un seul rendu, recalculé si l'un ou l'autre change.
+    const pitch = pitchStageSignature(state.settings, this.trackTonality(trackId));
+    const clean = cleanSignature(state.clean);
+    const signature = state.bypass || (pitch === 'off' && clean === 'off') ? 'off' : JSON.stringify([pitch, clean]);
     if (signature === state.signature) return;
     state.signature = signature;
     clearTimeout(state.timer);
     if (signature === 'off') {
       state.rendered = null;
       state.curves = null;
+      state.cleanInfo = null;
       state.compareRaw = false; // plus rien à comparer : on repasse en A
       this.engine.setPlaybackBuffer(trackId, null);
       this.#setStatus(trackId, 'idle');
@@ -210,10 +228,11 @@ export class VocalHub extends EventTarget {
       state.loaded = true;
     }
     try {
-      const { left, right, curves } = await this.client.render(
+      const { left, right, curves, cleanInfo } = await this.client.render(
         trackId,
         state.settings,
         this.trackTonality(trackId),
+        cleanActive(state.clean) ? state.clean : null,
         (phase) => {
           if (state.signature === signature) this.#setStatus(trackId, phase);
         },
@@ -225,6 +244,7 @@ export class VocalHub extends EventTarget {
       buffer.copyToChannel(right, 1);
       state.rendered = buffer;
       state.curves = curves;
+      state.cleanInfo = cleanInfo;
       // En écoute B (voix brute), le nouveau rendu attend qu'on repasse en A.
       if (!state.compareRaw) this.engine.setPlaybackBuffer(trackId, buffer);
       this.#setStatus(trackId, 'ready');

@@ -2669,6 +2669,76 @@ fieldset.fx-body:disabled .fx-section {
   color: var(--text-3);
 }
 
+/* ---------- Panneau FX : nettoyage de la voix ---------- */
+
+.sub-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+}
+
+.sub-card.off > :not(.sub-card-head) {
+  opacity: 0.45;
+}
+
+.sub-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sub-card-head .param-label {
+  color: var(--text);
+  font-weight: 600;
+  white-space: normal;
+}
+
+.sub-card .fx-caption {
+  margin: 0;
+}
+
+.sub-card > .btn {
+  align-self: flex-start;
+}
+
+.profile-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile-text {
+  font: 500 11px var(--font-mono);
+  color: var(--text-2);
+}
+
+.clean-warn {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: var(--radius-s);
+  background: rgb(255 181 71 / 10%);
+  color: var(--solo);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+.fx-section.flash {
+  animation: section-flash 1.4s ease-out;
+}
+
+@keyframes section-flash {
+  0% {
+    background: rgb(215 255 79 / 14%);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
 /* ---------- Barre supérieure : compactage (en fin de fichier pour l'emporter sur les règles de base) ---------- */
 
 /* Paliers de compactage de la barre supérieure, du moins utile au plus utile :

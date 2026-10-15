@@ -26,6 +26,9 @@ lecture. Les effets « classiques » restent en temps réel et se règlent penda
 l'écoute. L'analyse de hauteur, la partie coûteuse, est faite une seule fois
 par piste.
 
+Avant l'étage de hauteur, la voix peut être **nettoyée** (réduction de bruit,
+passe-haut, noise gate, de-esser) : voir [NETTOYAGE.md](NETTOYAGE.md).
+
 La **tonalité** (tonique et gamme) est réglée pour tout le morceau et ne fait
 pas partie des presets : un preset fonctionne dans n'importe quelle tonalité.
 Une piste peut avoir **sa propre tonalité** (voir ci-dessous).

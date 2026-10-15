@@ -53,6 +53,10 @@ export const icons = {
   scissors: icon(
     '<circle cx="5.5" cy="5.5" r="2.25"/><circle cx="5.5" cy="14.5" r="2.25"/><path d="M7.4 6.8L16 14M7.4 13.2L16 6"/>',
   ),
+  // Nettoyage : trois étincelles.
+  sparkle: icon(
+    '<path d="M8 3.5l1.2 3.3L12.5 8l-3.3 1.2L8 12.5 6.8 9.2 3.5 8l3.3-1.2z"/><path d="M14.5 11.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z"/>',
+  ),
   more: icon(
     '<circle cx="4.75" cy="10" r="1.5"/><circle cx="10" cy="10" r="1.5"/><circle cx="15.25" cy="10" r="1.5"/>',
     {
