@@ -84,6 +84,43 @@ const ui = {
   },
   captureArrangement: () => history.capture(),
   openTrackMenu: (id, anchor, at) => openTrackMenu(id, anchor, at),
+  /** Réglages bloqués (enregistrement en cours) ? */
+  isLocked: () => recorder.busy || engine.locked,
+  /**
+   * Modification des effets vocaux d'une piste, annulable (Ctrl/⌘+Z). Les
+   * modifications rapprochées d'un même réglage (curseur qu'on fait glisser)
+   * sont fusionnées en une seule entrée.
+   * @returns {boolean} faite
+   */
+  recordVocal(trackId, label, mutate, { mergeKey } = {}) {
+    if (trackBlocked()) return false;
+    const before = hub.snapshot(trackId);
+    mutate();
+    const after = hub.snapshot(trackId);
+    if (!before || JSON.stringify(before) === JSON.stringify(after)) return true;
+    const apply = (snap) => {
+      hub.restore(trackId, snap);
+      fxPanel.render();
+    };
+    history.push(
+      { label, undo: () => apply(before), redo: () => apply(after) },
+      { mergeKey: mergeKey && `vocal:${trackId}:${mergeKey}` },
+    );
+    return true;
+  },
+  /** Tonalité du morceau, annulable. */
+  setSongTonality(tonality) {
+    if (trackBlocked()) return;
+    const before = { ...hub.tonality };
+    hub.setTonality(tonality);
+    const after = { ...hub.tonality };
+    if (JSON.stringify(before) === JSON.stringify(after)) return;
+    history.push({
+      label: 'Changer la tonalité du morceau',
+      undo: () => hub.setTonality(before),
+      redo: () => hub.setTonality(after),
+    });
+  },
   renameTrack: (id) => trackActions.rename(id),
   onClipSelection: () => describeSelection(),
 };
@@ -110,7 +147,7 @@ const timeDisplay = $('#time-display');
 const statusEl = $('#status');
 
 // Exposé pour le débogage dans la console DevTools.
-Object.assign(window, { engine, hub, presets, recorder, timeline, editHistory: history });
+Object.assign(window, { engine, hub, presets, recorder, timeline, fxPanel, editHistory: history });
 
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
@@ -793,10 +830,16 @@ hub.addEventListener('change', () => {
 // --- Enregistrement ---------------------------------------------------------
 
 let lastRecorderState = recorder.state;
+let fxLocked = false;
 recorder.addEventListener('change', () => {
   const { state } = recorder;
-  // Un enregistrement commence : le menu d'une piste ne doit pas rester ouvert.
+  // Un enregistrement commence : le menu d'une piste ne doit pas rester ouvert,
+  // et les réglages d'effets sont bloqués (puis débloqués à la fin).
   if (recorder.busy) trackMenu.close();
+  if (recorder.busy !== fxLocked) {
+    fxLocked = recorder.busy;
+    fxPanel.render();
+  }
   const rec = state === 'recording' || state === 'finishing';
   document.body.classList.toggle('is-recording', rec);
   $('#btn-record').classList.toggle('armed', state === 'countdown' || rec);
@@ -864,6 +907,7 @@ function frame() {
     $('#btn-record').style.setProperty('--level', Math.min(1, recorder.readLevel() * 2));
   }
   recordPanel.tick();
+  fxPanel.tick();
   timeline.render();
   requestAnimationFrame(frame);
 }

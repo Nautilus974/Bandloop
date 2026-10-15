@@ -127,6 +127,7 @@ export function parseManifest(raw) {
           presetName: typeof t.vocal?.presetName === 'string' ? t.vocal.presetName : null,
           bypass: t.vocal?.bypass === true,
           settings: normalizeSettings(t.vocal?.settings ?? {}),
+          tonality: t.vocal?.tonality ? normalizeTonality(t.vocal.tonality) : null,
         },
       };
     }),

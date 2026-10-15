@@ -1,6 +1,12 @@
 // Panneau latéral d'effets vocaux de la piste sélectionnée :
-// presets par catégories, tonalité du morceau, étage de hauteur (correction,
-// transposition, harmonies, vocodeur, bourdon) et chaîne d'effets temps réel.
+// presets par catégories, correction de voix (vitesse, intensité, vibrato,
+// écoute A/B, tonalité du morceau ou propre à la piste, harmonies, note chantée
+// et note visée), transposition, harmonies, vocodeur, bourdon et chaîne
+// d'effets temps réel.
+//
+// Toute modification passe par ui.recordVocal : elle est annulable (Ctrl/⌘+Z)
+// et refusée pendant un enregistrement (le panneau est alors grisé).
+import { clipEnd } from '../audio/clips.js';
 import { formatPan } from '../audio/mixing.js';
 import { USER_CATEGORY } from '../presets/PresetStore.js';
 import { FX_CATALOG, FX_TYPES } from '../vocal/fx/catalog.js';
@@ -8,6 +14,7 @@ import {
   createModule,
   defaultSettings,
   DRONE_PARAMS,
+  HARMONY_LEVEL,
   HARMONY_VOICE_PARAMS,
   isNeutral,
   MAX_HARMONY_VOICES,
@@ -16,7 +23,7 @@ import {
   VOCODER_PARAMS,
   VOICE_PARAMS,
 } from '../vocal/settings.js';
-import { DIATONIC_INTERVALS, NOTE_NAMES, SCALES } from '../vocal/theory.js';
+import { DIATONIC_INTERVALS, inScale, NOTE_NAMES, SCALES } from '../vocal/theory.js';
 import { paramRow, toggleSwitch } from './controls.js';
 import { confirmDialog, promptDialog } from './Dialog.js';
 import { h, svg } from './dom.js';
@@ -25,8 +32,32 @@ import { icons } from './icons.js';
 const param = (list, key, overrides = {}) => ({ ...list.find((p) => p.key === key), ...overrides });
 
 // Présentation spécifique de certains paramètres.
-const SPEED = param(PITCH_PARAMS, 'speed', { format: (v) => (v === 0 ? 'Instantané' : `${v} ms`) });
-const STRENGTH = param(PITCH_PARAMS, 'strength');
+/** Caractère de la correction selon la vitesse de calage. */
+export function speedCharacter(ms) {
+  if (ms === 0) return 'Robot';
+  if (ms <= 35) return 'Rapide';
+  if (ms <= 130) return 'Naturel';
+  return 'Doux';
+}
+const SPEED = param(PITCH_PARAMS, 'speed', {
+  // Échelle « racine » : le tiers gauche du curseur couvre 0-45 ms, là où l'effet change le plus.
+  scale: 'sqrt',
+  format: (v) => (v === 0 ? 'Robot · instantané' : `${speedCharacter(v)} · ${v} ms`),
+});
+const SPEED_TICKS = [
+  [0, 'Robot'],
+  [20, 'Rapide'],
+  [80, 'Naturel'],
+  [200, 'Doux'],
+];
+const STRENGTH = param(PITCH_PARAMS, 'strength', { label: 'Intensité (dosage)' });
+const KEEP_VIBRATO = param(PITCH_PARAMS, 'keepVibrato');
+const HARMONY_MASTER = { ...HARMONY_LEVEL };
+/** Nom de note à la française : 60 = Do3. */
+export const noteName = (midi) => `${NOTE_NAMES[((midi % 12) + 12) % 12]}${Math.floor(midi / 12) - 2}`;
+/** Ligne de réglage avec une colonne de libellé plus large. */
+const wide = (row) => (row.classList.add('param-wide'), row);
+const PITCH_VIEW_SECONDS = 4; // fenêtre de l'affichage des hauteurs, centrée sur la tête
 const SHIFT = param(PITCH_PARAMS, 'shift');
 const FORMANT = param(PITCH_PARAMS, 'formant');
 const VOICE_LEVEL = param(VOICE_PARAMS, 'level', {
@@ -123,13 +154,26 @@ export class FxPanel {
     return this.state.settings;
   }
 
-  /** Applique une modification aux réglages de la piste. `structural` : redessiner le panneau. */
-  #edit(mutate, { structural = false } = {}) {
+  /**
+   * Applique une modification aux réglages de la piste (annulable).
+   * `structural` : redessiner le panneau ; `key` : réglage modifié, pour fusionner
+   * les mouvements d'un même curseur dans l'historique.
+   */
+  #edit(mutate, { structural = false, label = 'Modifier les effets vocaux', key } = {}) {
     const next = structuredClone(this.settings);
     mutate(next);
-    this.hub.setSettings(this.trackId, next);
-    if (structural) this.render();
+    const done = this.#record(label, () => this.hub.setSettings(this.trackId, next), key);
+    if (structural || !done) this.render();
     else this.#renderPresetBar();
+  }
+
+  /** Toute modification de l'état vocal passe par ici (historique, blocage). */
+  #record(label, fn, key) {
+    return this.ui.recordVocal ? this.ui.recordVocal(this.trackId, label, fn, { mergeKey: key }) : (fn(), true);
+  }
+
+  get locked() {
+    return !!this.ui.isLocked?.();
   }
 
   #isModified() {
@@ -171,8 +215,12 @@ export class FxPanel {
               'aria-pressed': String(this.state.bypass),
               title: this.state.bypass ? 'Réactiver les effets' : 'Contourner les effets (écoute de la voix d’origine)',
               'aria-label': 'Contourner les effets',
+              disabled: this.locked,
               onclick: () => {
-                this.hub.setBypass(this.trackId, !this.state.bypass);
+                const off = !this.state.bypass;
+                this.#record(off ? 'Contourner les effets' : 'Réactiver les effets', () =>
+                  this.hub.setBypass(this.trackId, off),
+                );
                 this.render();
               },
             },
@@ -200,11 +248,17 @@ export class FxPanel {
     }
 
     const body = h(
-      'div',
-      { className: `fx-body${this.state.bypass ? ' bypassed' : ''}` },
+      'fieldset',
+      { className: `fx-body${this.state.bypass ? ' bypassed' : ''}`, disabled: this.locked },
+      this.locked
+        ? h(
+            'p',
+            { className: 'fx-locked', role: 'status' },
+            'Enregistrement en cours : les réglages sont bloqués jusqu’à la fin de la prise.',
+          )
+        : null,
       this.#presetSection(),
-      this.#tonalitySection(),
-      this.#pitchSection(),
+      this.#correctionSection(),
       this.#timbreSection(),
       this.#harmonySection(),
       this.#vocoderSection(),
@@ -223,6 +277,11 @@ export class FxPanel {
     this.statusChip.textContent = STATUS_TEXT[status] ?? '';
     this.statusChip.dataset.status = status;
     this.statusChip.title = error || '';
+    // Le calcul vient de finir (ou de repartir) : A/B et affichage des notes suivent,
+    // sans redessiner tout le panneau (un curseur peut être en cours de glisser).
+    const canCompare = this.state.signature !== 'off' && !!this.state.rendered && !this.locked;
+    for (const b of this.abButtons ?? []) b.disabled = !canCompare;
+    this.lastPitchKey = null;
   }
 
   /** Section repliable, avec interrupteur optionnel dans l'en-tête. */
@@ -347,7 +406,7 @@ export class FxPanel {
         { className: 'preset-actions' },
         isUser && modified ? button('Enregistrer', 'save', () => this.#saveUserPreset(), 'btn-accent') : null,
         button('Enregistrer sous…', isUser && modified ? null : 'save', () => this.#saveAs()),
-        modified ? button('Rétablir', 'reset', () => this.#applyPreset(presetId)) : null,
+        modified ? button('Revenir au preset', 'reset', () => this.#applyPreset(presetId)) : null,
         isUser ? button('Renommer', null, () => this.#rename()) : null,
         isUser ? button('Supprimer', 'trash', () => this.#deletePreset(), 'btn-danger-ghost') : null,
         preset || !isNeutral(this.settings) ? button('Tout retirer', null, () => this.#clear()) : null,
@@ -358,13 +417,18 @@ export class FxPanel {
   #applyPreset(id) {
     const settings = this.presets.settingsOf(id);
     if (!settings) return;
-    this.hub.setSettings(this.trackId, settings, { presetId: id });
-    this.ui.notify(`Preset « ${this.presets.get(id).name} » appliqué.`);
+    const name = this.presets.get(id).name;
+    const done = this.#record(`Appliquer le preset « ${name} »`, () =>
+      this.hub.setSettings(this.trackId, settings, { presetId: id }),
+    );
+    if (done) this.ui.notify(`Preset « ${name} » appliqué.`);
     this.render();
   }
 
   #clear() {
-    this.hub.setSettings(this.trackId, defaultSettings(), { presetId: null });
+    this.#record('Retirer tous les effets', () =>
+      this.hub.setSettings(this.trackId, defaultSettings(), { presetId: null }),
+    );
     this.render();
   }
 
@@ -379,7 +443,9 @@ export class FxPanel {
     if (!name) return;
     try {
       const created = await this.presets.create(name, this.settings);
-      this.hub.setSettings(this.trackId, this.settings, { presetId: created.id });
+      this.#record(`Enregistrer le preset « ${created.name} »`, () =>
+        this.hub.setSettings(this.trackId, this.settings, { presetId: created.id }),
+      );
       this.category = USER_CATEGORY.id;
       this.presetCategoryChosen = true;
       this.ui.notify(`Preset « ${created.name} » enregistré.`);
@@ -436,49 +502,328 @@ export class FxPanel {
 
   // ------------------------------------------------------------------ tonalité et hauteur
 
-  #tonalitySection() {
-    const { key, scale } = this.hub.tonality;
+  // ------------------------------------------------------------------ correction de voix
+
+  #correctionSection() {
+    const { pitch, harmony } = this.settings;
+    const state = this.state;
+    const k = (key) => ({ key });
+
+    // Écoute A/B : simple écoute, rien n'est modifié.
+    const canCompare = state.signature !== 'off' && !!state.rendered;
+    this.abButtons = [];
+    const ab = h(
+      'div',
+      { className: 'ab-row' },
+      h('span', { className: 'param-label' }, 'Écoute'),
+      h(
+        'div',
+        {
+          className: 'segmented ab-switch',
+          role: 'radiogroup',
+          'aria-label': 'Comparer la voix corrigée et la voix brute',
+          title: canCompare
+            ? 'Compare à l’oreille, pendant la lecture. Simple écoute : l’export et le projet gardent la voix corrigée.'
+            : 'Disponible quand la correction (ou un autre effet de hauteur) est calculée.',
+        },
+        [
+          [false, 'A', 'Corrigée'],
+          [true, 'B', 'Brute'],
+        ]
+          .map(([raw, letter, label]) =>
+            h(
+              'button',
+              {
+                role: 'radio',
+                'aria-checked': String(state.compareRaw === raw),
+                disabled: !canCompare,
+                onclick: () => {
+                  this.hub.setCompare(this.trackId, raw);
+                  this.render();
+                },
+              },
+              h('b', {}, letter),
+              ` ${label}`,
+            ),
+          )
+          .map((b) => (this.abButtons.push(b), b)),
+      ),
+    );
+
+    // Note chantée / note visée.
+    this.pitchView = h('canvas', { className: 'pitch-view', height: 96 });
+    this.pitchReadout = h('div', { className: 'pitch-readout', 'aria-live': 'off' });
+
+    const speedRow = paramRow(SPEED, pitch.speed, (v) =>
+      this.#edit((s) => (s.pitch.speed = v), { label: 'Vitesse de calage', ...k('pitch.speed') }),
+    );
+    speedRow.classList.add('param-hero');
+    speedRow.append(
+      h(
+        'div',
+        { className: 'param-ticks', 'aria-hidden': 'true' },
+        SPEED_TICKS.map(([ms, label]) =>
+          h('span', { style: { left: `${(Math.sqrt(ms / SPEED.max) * 100).toFixed(2)}%` } }, label),
+        ),
+      ),
+    );
+    const strengthRow = paramRow(STRENGTH, pitch.strength, (v) =>
+      this.#edit((s) => (s.pitch.strength = v), { label: 'Intensité de la correction', ...k('pitch.strength') }),
+    );
+    strengthRow.classList.add('param-hero');
+    strengthRow.append(
+      h('div', { className: 'param-scale' }, h('span', {}, 'Voix brute'), h('span', {}, 'Pleinement corrigée')),
+    );
+
+    return this.#section(
+      'pitch',
+      'Correction de voix',
+      {
+        enabled: pitch.correct,
+        onToggle: (v) =>
+          this.#edit((s) => (s.pitch.correct = v), {
+            structural: true,
+            label: v ? 'Activer la correction' : 'Désactiver la correction',
+          }),
+        caption:
+          'Recale la voix sur les notes de la gamme. Calcul en arrière-plan après chaque réglage (quelques secondes), pas en direct au micro.',
+      },
+      ab,
+      h('div', { className: 'pitch-box' }, this.pitchReadout, this.pitchView),
+      speedRow,
+      strengthRow,
+      wide(
+        paramRow(KEEP_VIBRATO, pitch.keepVibrato, (v) =>
+          this.#edit((s) => (s.pitch.keepVibrato = v), { label: 'Préserver le vibrato' }),
+        ),
+      ),
+      this.#trackTonalityBlock(),
+      this.#harmonyQuick(harmony),
+    );
+  }
+
+  /** Tonalité de calage : celle du morceau, ou une tonalité propre à la piste. */
+  #trackTonalityBlock() {
+    const own = this.state.tonality;
+    const current = own ?? this.hub.tonality;
+    const set = (t) => {
+      if (own) this.#record('Changer la tonalité de la piste', () => this.hub.setTrackTonality(this.trackId, t));
+      else this.ui.setSongTonality ? this.ui.setSongTonality(t) : this.hub.setTonality(t);
+      this.render();
+    };
     const keySelect = h(
       'select',
       {
         className: 'select',
-        'aria-label': 'Tonique',
-        onchange: () => this.hub.setTonality({ key: Number(keySelect.value), scale }),
+        'aria-label': own ? 'Tonique de la piste' : 'Tonique du morceau',
+        onchange: () => set({ key: Number(keySelect.value), scale: current.scale }),
       },
-      NOTE_NAMES.map((n, i) => h('option', { value: i, selected: i === key }, n)),
+      NOTE_NAMES.map((n, i) => h('option', { value: i, selected: i === current.key }, n)),
     );
     const scaleSelect = h(
       'select',
       {
         className: 'select',
-        'aria-label': 'Gamme',
-        onchange: () => this.hub.setTonality({ key, scale: scaleSelect.value }),
+        'aria-label': own ? 'Gamme de la piste' : 'Gamme du morceau',
+        onchange: () => set({ key: current.key, scale: scaleSelect.value }),
       },
-      Object.entries(SCALES).map(([id, s]) => h('option', { value: id, selected: id === scale }, s.label)),
+      Object.entries(SCALES).map(([id, sc]) => h('option', { value: id, selected: id === current.scale }, sc.label)),
     );
-    return this.#section(
-      'tonality',
-      'Tonalité du morceau',
-      { caption: 'Commune à toutes les pistes : la correction et les harmonies se calent sur cette gamme.' },
+    const checkbox = h('input', {
+      type: 'checkbox',
+      checked: !!own,
+      onchange: () => {
+        this.#record(checkbox.checked ? 'Tonalité propre à la piste' : 'Suivre la tonalité du morceau', () =>
+          this.hub.setTrackTonality(this.trackId, checkbox.checked ? { ...this.hub.tonality } : null),
+        );
+        this.render();
+      },
+    });
+    const song = this.hub.tonality;
+    return h(
+      'div',
+      { className: `tonality-block${own ? ' own' : ''}` },
+      h('span', { className: 'param-label' }, own ? 'Tonalité de la piste' : 'Tonalité du morceau'),
       h('div', { className: 'tonality' }, keySelect, scaleSelect),
+      h('label', { className: 'check-row' }, checkbox, h('span', {}, 'Tonalité propre à cette piste')),
+      h(
+        'p',
+        { className: 'fx-caption' },
+        own
+          ? `Cette piste se cale sur sa propre gamme. Le morceau reste en ${NOTE_NAMES[song.key]} ${SCALES[song.scale].label.toLowerCase()}.`
+          : 'Commune à toutes les pistes qui suivent le morceau (correction, harmonies, vocodeur, bourdon).',
+      ),
     );
   }
 
-  #pitchSection() {
-    const { pitch } = this.settings;
-    const speedRow = paramRow(SPEED, pitch.speed, (v) => this.#edit((s) => (s.pitch.speed = v)));
-    speedRow.append(h('div', { className: 'param-scale' }, h('span', {}, 'Robot'), h('span', {}, 'Naturel')));
-    return this.#section(
-      'pitch',
-      'Correction de hauteur',
-      {
-        caption: 'Détection YIN puis resynthèse TD-PSOLA, calculées en arrière-plan (Web Worker).',
-        enabled: pitch.correct,
-        onToggle: (v) => this.#edit((s) => (s.pitch.correct = v), { structural: true }),
-      },
-      speedRow,
-      paramRow(STRENGTH, pitch.strength, (v) => this.#edit((s) => (s.pitch.strength = v))),
+  /** Harmonies : interrupteur et niveau global (le détail des voix est plus bas). */
+  #harmonyQuick(harmony) {
+    const n = harmony.voices.length;
+    const toggle = toggleSwitch({
+      checked: harmony.enabled && n > 0,
+      label: 'Activer les harmonies',
+      onChange: (v) =>
+        this.#edit(
+          (s) => {
+            s.harmony.enabled = v;
+            // Première activation : une voix à la tierce, pour entendre quelque chose.
+            if (v && !s.harmony.voices.length)
+              s.harmony.voices.push({
+                interval: s.harmony.mode === 'diatonic' ? 2 : 4,
+                level: -6,
+                pan: -40,
+                detune: 0,
+                delay: 0,
+              });
+          },
+          { structural: true, label: v ? 'Activer les harmonies' : 'Désactiver les harmonies' },
+        ),
+    });
+    return h(
+      'div',
+      { className: `harmony-quick${harmony.enabled && n ? '' : ' off'}` },
+      h(
+        'div',
+        { className: 'harmony-quick-head' },
+        h('span', { className: 'param-label' }, 'Harmonies'),
+        h('span', { className: 'harmony-count' }, n ? `${n} voix · détail plus bas` : 'aucune voix'),
+        toggle,
+      ),
+      wide(
+        paramRow(HARMONY_MASTER, harmony.level, (v) =>
+          this.#edit((s) => (s.harmony.level = v), { label: 'Niveau des harmonies', key: 'harmony.level' }),
+        ),
+      ),
     );
+  }
+
+  /**
+   * Affichage de la note chantée et de la note visée, autour de la tête de
+   * lecture (appelé à chaque image tant que le panneau est ouvert).
+   */
+  tick() {
+    const canvas = this.pitchView;
+    if (!this.isOpen || !canvas?.isConnected) return;
+    const track = this.engine.getTrack(this.trackId);
+    const curves = this.state?.curves;
+    const position = this.engine.position;
+    const key = `${position.toFixed(3)}|${curves ? curves.inMidi.length : 0}|${this.state?.signature}|${canvas.clientWidth}`;
+    if (key === this.lastPitchKey) return;
+    this.lastPitchKey = key;
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.clientWidth;
+    const hgt = canvas.clientHeight;
+    if (canvas.width !== Math.round(w * dpr)) canvas.width = Math.round(w * dpr);
+    if (canvas.height !== Math.round(hgt * dpr)) canvas.height = Math.round(hgt * dpr);
+    const g = canvas.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, hgt);
+
+    if (!track || !curves) {
+      this.pitchReadout.replaceChildren(
+        h(
+          'span',
+          { className: 'pitch-hint' },
+          this.settings?.pitch.correct
+            ? 'Calcul en cours… la note chantée et la note visée s’afficheront ici.'
+            : 'Active la correction pour voir la note chantée et la note visée.',
+        ),
+      );
+      return;
+    }
+
+    // Trame d'analyse correspondant à un instant de la timeline (à travers les clips).
+    const sr = track.sampleRate;
+    const frameAt = (t) => {
+      for (const c of track.clips) {
+        if (t >= c.start && t < clipEnd(c, sr)) return Math.floor((c.offset + (t - c.start) * sr) / curves.hop);
+      }
+      return -1;
+    };
+    const valueAt = (arr, f) => (f >= 0 && f < arr.length ? arr[f] : NaN);
+
+    // Lecture instantanée.
+    const f = frameAt(position);
+    const sung = valueAt(curves.inMidi, f);
+    const target = valueAt(curves.noteMidi, f);
+    if (Number.isNaN(sung)) {
+      this.pitchReadout.replaceChildren(
+        h('span', { className: 'pitch-hint' }, 'Pas de note chantée à la tête de lecture.'),
+      );
+    } else {
+      const cents = Math.round((sung - target) * 100);
+      const centsText = `${cents > 0 ? '+' : cents < 0 ? '−' : '±'}${Math.abs(cents)} ct`;
+      this.pitchReadout.replaceChildren(
+        h('span', { className: 'pitch-label' }, 'Chantée'),
+        h('b', { className: 'pitch-sung' }, noteName(Math.round(sung))),
+        h('span', { className: `pitch-cents${Math.abs(cents) > 25 ? ' off' : ''}` }, centsText),
+        h('span', { className: 'pitch-arrow' }, '→'),
+        h('span', { className: 'pitch-label' }, 'Visée'),
+        h('b', { className: 'pitch-target' }, noteName(target)),
+      );
+    }
+
+    // Courbes sur ±2 s : gamme en fond, voix chantée (gris), voix corrigée (accent).
+    const t0 = position - PITCH_VIEW_SECONDS / 2;
+    const samples = [];
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let x = 0; x < w; x += 2) {
+      const fr = frameAt(t0 + (x / w) * PITCH_VIEW_SECONDS);
+      const a = valueAt(curves.inMidi, fr);
+      const b = valueAt(curves.outMidi, fr);
+      samples.push([x, a, b]);
+      if (!Number.isNaN(a)) {
+        lo = Math.min(lo, a, b);
+        hi = Math.max(hi, a, b);
+      }
+    }
+    if (lo === Infinity) {
+      lo = 57;
+      hi = 69;
+    }
+    const mid = (lo + hi) / 2;
+    const span = Math.max(7, hi - lo + 3);
+    lo = mid - span / 2;
+    hi = mid + span / 2;
+    const y = (m) => hgt - ((m - lo) / (hi - lo)) * hgt;
+    const { key: tk, scale } = this.hub.trackTonality(this.trackId);
+    g.font = '500 9px "JetBrains Mono", monospace';
+    g.textBaseline = 'middle';
+    let lastLabel = Infinity;
+    for (let m = Math.ceil(lo); m <= Math.floor(hi); m++) {
+      if (!inScale(m, tk, scale)) continue;
+      g.fillStyle = m % 12 === tk ? 'rgb(215 255 79 / 16%)' : 'rgb(255 255 255 / 6%)';
+      g.fillRect(0, Math.round(y(m)), w, 1);
+      // Nom de la note, sauf s'il chevaucherait le précédent (demi-ton voisin).
+      if (lastLabel - y(m) >= 11) {
+        g.fillStyle = 'rgb(255 255 255 / 30%)';
+        g.fillText(noteName(m), 4, y(m) - 6);
+        lastLabel = y(m);
+      }
+    }
+    const line = (index, color, width) => {
+      g.strokeStyle = color;
+      g.lineWidth = width;
+      g.beginPath();
+      let pen = false;
+      for (const sample of samples) {
+        const m = sample[index];
+        if (Number.isNaN(m)) {
+          pen = false;
+          continue;
+        }
+        if (pen) g.lineTo(sample[0], y(m));
+        else g.moveTo(sample[0], y(m));
+        pen = true;
+      }
+      g.stroke();
+    };
+    line(1, 'rgb(234 237 242 / 60%)', 1.5);
+    if (this.settings.pitch.correct) line(2, '#d7ff4f', 2);
+    g.fillStyle = 'rgb(215 255 79 / 70%)';
+    g.fillRect(Math.round(w / 2), 0, 1, hgt);
   }
 
   #timbreSection() {

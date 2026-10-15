@@ -38,8 +38,10 @@ vocaux et des presets. Construit avec **Electron** et la **Web Audio API**.
 - **Console** : volume en dB, panoramique, mute et solo par piste, VU-mètre
   stéréo et limiteur sur le master.
 - **Moteur vocal** :
-  - correction de hauteur, de l'instantané (robot) au lent (naturel), calée sur
-    la tonalité et la gamme du morceau ;
+  - correction de voix réglable à la main : vitesse (robot → naturel → doux),
+    intensité 0-100 %, vibrato préservé, écoute A/B corrigée / brute, note
+    chantée et note visée, tonalité du morceau ou propre à la piste ;
+    annulable (Ctrl/⌘+Z) ;
   - transposition et formants ;
   - jusqu'à 4 harmonies dans la gamme ;
   - vocodeur et bourdon ;
@@ -75,14 +77,14 @@ morceau** (ici La mineur, c'est-à-dire `La` + `Mineur naturel`).
 
 ## Scripts
 
-| Commande           | Rôle                                                                                                                                                                                          |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm start`        | Lance l'app en développement                                                                                                                                                                  |
-| `npm test`         | Tests unitaires (`node:test`, sans Electron)                                                                                                                                                  |
-| `npm run test:e2e` | Tests de bout en bout dans l'app Electron (enregistrement, déplacement, montage, menu des pistes, barre supérieure, projets, export) ; sous Linux sans écran : `xvfb-run -a npm run test:e2e` |
-| `npm run samples`  | Génère des WAV de démo                                                                                                                                                                        |
-| `npm run dist:mac` | Construit un `.dmg` (à lancer sur un Mac)                                                                                                                                                     |
-| `npm run dist:win` | Construit un installeur `.exe` (NSIS)                                                                                                                                                         |
+| Commande           | Rôle                                                                                                                                                                                                              |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm start`        | Lance l'app en développement                                                                                                                                                                                      |
+| `npm test`         | Tests unitaires (`node:test`, sans Electron)                                                                                                                                                                      |
+| `npm run test:e2e` | Tests de bout en bout dans l'app Electron (enregistrement, déplacement, montage, menu des pistes, correction de voix, barre supérieure, projets, export) ; sous Linux sans écran : `xvfb-run -a npm run test:e2e` |
+| `npm run samples`  | Génère des WAV de démo                                                                                                                                                                                            |
+| `npm run dist:mac` | Construit un `.dmg` (à lancer sur un Mac)                                                                                                                                                                         |
+| `npm run dist:win` | Construit un installeur `.exe` (NSIS)                                                                                                                                                                             |
 
 ## Documentation
 

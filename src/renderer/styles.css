@@ -2432,6 +2432,243 @@ body.reordering * {
   }
 }
 
+/* ---------- Panneau FX : correction de voix ---------- */
+
+fieldset.fx-body {
+  min-width: 0;
+  margin: 0;
+  padding: 0 0 32px;
+  border: 0;
+}
+
+.fx-locked {
+  margin: 12px 16px 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  background: rgb(255 77 109 / 12%);
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+fieldset.fx-body:disabled .fx-section {
+  opacity: 0.55;
+}
+
+/* Réglage mis en avant : libellé et valeur au-dessus, curseur pleine largeur. */
+.param.param-hero {
+  grid-template-columns: 1fr auto;
+  row-gap: 6px;
+  padding: 4px 0 2px;
+}
+
+.param-hero .param-label {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.param-hero .param-value {
+  color: var(--accent);
+  font-size: 11.5px;
+}
+
+.param-hero .param-slider {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.param-hero .param-scale {
+  grid-column: 1 / -1;
+  margin-top: -2px;
+}
+
+.param-ticks {
+  position: relative;
+  grid-column: 1 / -1;
+  height: 14px;
+  margin: -2px 7px 0;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.param-ticks span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.param-ticks span:first-child {
+  transform: none;
+}
+
+.param-ticks span:last-child {
+  transform: translateX(-70%);
+}
+
+.param-ticks span::before {
+  content: '';
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  width: 1px;
+  height: 4px;
+  background: var(--line-3);
+}
+
+.param-ticks span:first-child::before {
+  left: 0;
+}
+
+.param.param-wide {
+  grid-template-columns: 150px 1fr auto;
+}
+
+.param.param-wide.param-bool {
+  grid-template-columns: 150px 1fr;
+}
+
+.ab-row {
+  display: grid;
+  grid-template-columns: 104px 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.ab-switch b {
+  margin-right: 2px;
+  font-family: var(--font-mono);
+  color: var(--accent);
+}
+
+.ab-switch button[aria-checked='true'][role='radio']:last-child b {
+  color: var(--danger);
+}
+
+.pitch-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border-radius: var(--radius-s);
+  background: var(--bg-0);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.pitch-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 20px;
+  font-size: 12px;
+}
+
+.pitch-label {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.pitch-sung,
+.pitch-target {
+  font: 600 15px var(--font-mono);
+}
+
+.pitch-target {
+  color: var(--accent);
+}
+
+.pitch-cents {
+  font: 500 11px var(--font-mono);
+  color: var(--accent-2);
+}
+
+.pitch-cents.off {
+  color: var(--solo);
+}
+
+.pitch-arrow {
+  margin: 0 2px;
+  color: var(--text-3);
+}
+
+.pitch-hint {
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+
+.pitch-view {
+  display: block;
+  width: 100%;
+  height: 96px;
+}
+
+.tonality-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+}
+
+.tonality-block.own {
+  box-shadow: inset 0 0 0 1px rgb(215 255 79 / 35%);
+}
+
+.tonality-block .fx-caption {
+  margin: 0;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.check-row input {
+  accent-color: var(--accent);
+}
+
+.harmony-quick {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: var(--radius-s);
+  background: var(--bg-1);
+}
+
+.harmony-quick.off .param {
+  opacity: 0.45;
+}
+
+.harmony-quick-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.harmony-quick-head .param-label {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.harmony-count {
+  margin-right: auto;
+  font-size: 11px;
+  color: var(--text-3);
+}
+
 /* ---------- Barre supérieure : compactage (en fin de fichier pour l'emporter sur les règles de base) ---------- */
 
 /* Paliers de compactage de la barre supérieure, du moins utile au plus utile :

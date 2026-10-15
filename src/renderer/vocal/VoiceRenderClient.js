@@ -42,7 +42,7 @@ export class VoiceRenderClient {
   }
 
   /**
-   * @returns {Promise<{left: Float32Array, right: Float32Array}>}
+   * @returns {Promise<{left: Float32Array, right: Float32Array, curves: object}>}
    * @param {(phase: string) => void} [onPhase]  'analyzing' puis 'rendering'
    */
   render(trackId, settings, tonality, onPhase) {
@@ -68,12 +68,12 @@ export class VoiceRenderClient {
     }, 30);
   }
 
-  #onMessage({ id, phase, ok, left, right, error }) {
+  #onMessage({ id, phase, ok, left, right, curves, error }) {
     const job = this.pending.get(id);
     if (!job) return;
     if (phase) return job.onPhase?.(phase);
     this.pending.delete(id);
-    if (ok) job.resolve({ left, right });
+    if (ok) job.resolve({ left, right, curves });
     else job.reject(new Error(error));
   }
 }

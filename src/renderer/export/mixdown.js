@@ -90,11 +90,12 @@ export async function renderMix({ engine, hub, sampleRate = engine.ctx.sampleRat
     const fader = ctx.createGain();
     fader.gain.value = effectiveGain(track, anySolo);
     chain.output.connect(panner).connect(fader).connect(master);
-    // Clips de la piste, joués comme en lecture (audio d'origine ou rendu vocal).
+    // Clips de la piste, joués comme en lecture (audio d'origine ou rendu vocal ;
+    // toujours le rendu, même si on écoute la voix brute en A/B).
     scheduleClips(
       ctx,
       {
-        buffer: track.playbackBuffer,
+        buffer: hub?.exportBuffer?.(track.id) ?? track.playbackBuffer,
         clips: track.clips,
         sampleRate: track.sampleRate,
         sourceLength: track.buffer.length,

@@ -14,8 +14,15 @@ self.onmessage = ({ data }) => {
       self.postMessage({ id: data.id, phase: 'analyzing' });
       renderer.analyze(data.trackId);
       self.postMessage({ id: data.id, phase: 'rendering' });
-      const { left, right } = renderer.render(data.trackId, data.settings, data.tonality);
-      self.postMessage({ id: data.id, ok: true, left, right }, [left.buffer, right.buffer]);
+      const { left, right, curves } = renderer.render(data.trackId, data.settings, data.tonality);
+      const { inMidi, noteMidi, outMidi } = curves;
+      self.postMessage({ id: data.id, ok: true, left, right, curves }, [
+        left.buffer,
+        right.buffer,
+        inMidi.buffer,
+        noteMidi.buffer,
+        outMidi.buffer,
+      ]);
     }
   } catch (err) {
     self.postMessage({ id: data.id, ok: false, error: String(err?.message ?? err) });

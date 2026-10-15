@@ -179,6 +179,8 @@ export class ProjectManager extends EventTarget {
           presetName: preset ? preset.name : null,
           bypass: !!state?.bypass,
           settings: state?.settings ?? {},
+          // Tonalité propre à la piste (null : elle suit celle du morceau).
+          tonality: state?.tonality ?? null,
         },
       });
     }
@@ -354,6 +356,7 @@ export class ProjectManager extends EventTarget {
         if (t.muted) this.engine.setMuted(track.id, true);
         if (t.solo) this.engine.setSolo(track.id, true);
         const presetId = t.vocal.presetId && this.presets.get(t.vocal.presetId) ? t.vocal.presetId : null;
+        if (t.vocal.tonality) this.hub.setTrackTonality(track.id, t.vocal.tonality);
         this.hub.setSettings(track.id, t.vocal.settings, { presetId });
         if (t.vocal.bypass) this.hub.setBypass(track.id, true);
       }

@@ -97,3 +97,27 @@ test('vocodeur : la sortie suit l’enveloppe de la voix (silence -> silence)', 
   assert.ok(during > 0.1, 'audible pendant la voix');
   assert.ok(after < during * 1e-6, `silencieux ensuite (${after} vs ${during})`);
 });
+
+test('niveau global des harmonies : −6 dB divise leur amplitude par deux', () => {
+  const base = { harmony: { enabled: true, voices: [{ interval: 2, level: 0, pan: 100 }] }, voice: { level: -60 } };
+  const loud = renderVoice(offPitch, analysis, normalizeSettings(base), C_MAJOR);
+  const soft = renderVoice(
+    offPitch,
+    analysis,
+    normalizeSettings({ ...base, harmony: { ...base.harmony, level: -6 } }),
+    C_MAJOR,
+  );
+  const ratio = peak(soft.right) / peak(loud.right);
+  assert.ok(Math.abs(ratio - 0.501) < 0.01, `rapport ${ratio}`);
+});
+
+test('courbes de hauteur renvoyées pour l’affichage : chantée, visée, corrigée', () => {
+  const s = normalizeSettings({ pitch: { correct: true, speed: 0 } });
+  const { curves } = renderVoice(offPitch, analysis, s, C_MAJOR);
+  assert.equal(curves.hop, analysis.hop);
+  assert.equal(curves.inMidi.length, analysis.f0.length);
+  const mid = Math.floor(curves.inMidi.length / 2);
+  assert.ok(Math.abs(curves.inMidi[mid] - 63.65) < 0.3, `chantée ${curves.inMidi[mid]}`);
+  assert.equal(curves.noteMidi[mid], 64);
+  assert.ok(Math.abs(curves.outMidi[mid] - 64) < 0.02, `corrigée ${curves.outMidi[mid]}`);
+});

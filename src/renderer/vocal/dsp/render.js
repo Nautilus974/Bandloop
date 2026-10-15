@@ -43,7 +43,8 @@ function carrierOffsets(chord, { key, scale }) {
  * @param {object} settings         Réglages normalisés (settings.js)
  * @param {{key: number, scale: string}} tonality
  * @param {object} [pitchMarks]     Marques PSOLA pré-calculées (réutilisées entre rendus)
- * @returns {{ left: Float32Array, right: Float32Array }}
+ * @returns {{ left: Float32Array, right: Float32Array, curves: { hop: number, inMidi: Float32Array, noteMidi: Float32Array, outMidi: Float32Array } }}
+ *   curves : hauteur chantée, note visée et hauteur corrigée par trame de `hop` échantillons (affichage)
  */
 export function renderVoice(mono, analysis, settings, tonality, pitchMarks = findPitchMarks(mono, analysis)) {
   const n = mono.length;
@@ -60,6 +61,7 @@ export function renderVoice(mono, analysis, settings, tonality, pitchMarks = fin
     speed: pitch.speed,
     strength: pitch.strength / 100,
     shift: pitch.shift,
+    keepVibrato: pitch.keepVibrato,
   });
 
   // 1. Voix principale.
@@ -98,7 +100,7 @@ export function renderVoice(mono, analysis, settings, tonality, pitchMarks = fin
       const ratio = buildHarmonyRatio(lead, { interval: v.interval, detune: v.detune, mode: harmony.mode }, tonality);
       const h = psola(mono, analysis, ratio, { formant, pitchMarks });
       const [gl, gr] = panGains(v.pan / 100);
-      const g = dbToGain(v.level);
+      const g = dbToGain(v.level + harmony.level);
       const delay = Math.round((v.delay / 1000) * sampleRate);
       for (let i = 0; i + delay < n; i++) {
         const s = h[i] * g * curveAt(voicing, hop, i);
@@ -125,5 +127,5 @@ export function renderVoice(mono, analysis, settings, tonality, pitchMarks = fin
     }
   }
 
-  return { left, right };
+  return { left, right, curves: { hop, inMidi: lead.inMidi, noteMidi: lead.noteMidi, outMidi: lead.outMidi } };
 }

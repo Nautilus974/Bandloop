@@ -96,3 +96,30 @@ test('enveloppe de voisement : monte sur le voisé, retombe sur le silence', () 
   assert.ok(env[39] > 0.95);
   assert.ok(env[119] < 0.05);
 });
+
+test('préserver le vibrato : la note est recentrée mais l’oscillation reste', () => {
+  // Note tenue 30 cents trop haut avec un vibrato de ±40 cents à 5,5 Hz.
+  const hopSec = HOP / SR;
+  const midis = Array.from({ length: 600 }, (_, i) => 60.3 + 0.4 * Math.sin(2 * Math.PI * 5.5 * i * hopSec));
+  const opts = { correct: true, ...C_MAJOR, speed: 0, strength: 1, shift: 0 };
+  const flat = buildLeadCurve(fakeAnalysis(midis), opts);
+  const kept = buildLeadCurve(fakeAnalysis(midis), { ...opts, keepVibrato: true });
+  const tail = (c) => Array.from(c.outMidi.subarray(300));
+  const range = (xs) => Math.max(...xs) - Math.min(...xs);
+  const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+  assert.ok(range(tail(flat)) < 0.01, 'sans l’option, robot : vibrato effacé');
+  assert.ok(range(tail(kept)) > 0.6, `avec l’option, vibrato conservé (${range(tail(kept))})`);
+  assert.ok(Math.abs(mean(tail(kept)) - 60) < 0.05, `centre ramené sur Do (${mean(tail(kept))})`);
+});
+
+test('intensité 0 % : voix brute, quelle que soit la vitesse', () => {
+  const c = buildLeadCurve(fakeAnalysis([60.4, 61.7, 63.2]), {
+    correct: true,
+    ...C_MAJOR,
+    speed: 0,
+    strength: 0,
+    shift: 0,
+  });
+  assert.ok(c.outMidi.every((m, i) => near(m, c.inMidi[i])));
+  assert.ok(c.leadRatio.every((r) => near(r, 1)));
+});

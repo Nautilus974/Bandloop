@@ -57,6 +57,10 @@ export class VocalHub extends EventTarget {
         loaded: false,
         status: 'idle', // idle | pending | analyzing | rendering | ready | error
         timer: null,
+        tonality: null, // tonalité propre à la piste ; null = suit le morceau
+        rendered: null, // dernier rendu de l'étage de hauteur (AudioBuffer)
+        curves: null, // hauteurs chantée / visée / corrigée, pour l'affichage
+        compareRaw: false, // écoute A/B : true = voix brute (sans étage de hauteur)
       });
     }
     for (const [id, state] of this.states) {
@@ -105,6 +109,64 @@ export class VocalHub extends EventTarget {
     this.#emit('change', trackId);
   }
 
+  /** Tonalité utilisée par une piste : la sienne, ou celle du morceau. */
+  trackTonality(trackId) {
+    return this.states.get(trackId)?.tonality ?? this.tonality;
+  }
+
+  /** Donne à une piste sa propre tonalité (null : elle suit de nouveau le morceau). */
+  setTrackTonality(trackId, tonality) {
+    const state = this.states.get(trackId);
+    if (!state) return;
+    state.tonality = tonality ? normalizeTonality(tonality) : null;
+    this.#apply(trackId);
+    this.#emit('change', trackId);
+  }
+
+  /**
+   * Écoute comparative A/B : voix corrigée (A) ou voix brute (B, sans
+   * correction ni harmonies ; la chaîne d'effets temps réel reste active).
+   * Simple écoute : ni enregistrée dans le projet, ni exportée, ni annulable.
+   */
+  setCompare(trackId, raw) {
+    const state = this.states.get(trackId);
+    if (!state || state.compareRaw === raw) return;
+    state.compareRaw = raw;
+    this.engine.setPlaybackBuffer(trackId, raw ? null : state.rendered);
+    this.#emit('compare', trackId);
+  }
+
+  /** Audio à exporter pour une piste : toujours la version traitée, même en écoute B. */
+  exportBuffer(trackId) {
+    const state = this.states.get(trackId);
+    const track = this.engine.getTrack(trackId);
+    if (!track) return null;
+    return (state?.signature !== 'off' && state?.rendered) || track.buffer;
+  }
+
+  /** Réglages vocaux complets d'une piste (pour l'annulation). */
+  snapshot(trackId) {
+    const s = this.states.get(trackId);
+    if (!s) return null;
+    return {
+      settings: structuredClone(s.settings),
+      presetId: s.presetId,
+      bypass: s.bypass,
+      tonality: s.tonality && { ...s.tonality },
+    };
+  }
+
+  restore(trackId, snap) {
+    const state = this.states.get(trackId);
+    if (!state || !snap) return;
+    state.settings = normalizeSettings(structuredClone(snap.settings));
+    state.presetId = snap.presetId;
+    state.bypass = snap.bypass;
+    state.tonality = snap.tonality ? normalizeTonality(snap.tonality) : null;
+    this.#apply(trackId);
+    this.#emit('change', trackId);
+  }
+
   setBypass(trackId, bypass) {
     const state = this.states.get(trackId);
     if (!state) return;
@@ -123,11 +185,14 @@ export class VocalHub extends EventTarget {
   #apply(trackId) {
     const state = this.states.get(trackId);
     state.chain.apply(state.bypass ? [] : state.settings.chain);
-    const signature = state.bypass ? 'off' : pitchStageSignature(state.settings, this.tonality);
+    const signature = state.bypass ? 'off' : pitchStageSignature(state.settings, this.trackTonality(trackId));
     if (signature === state.signature) return;
     state.signature = signature;
     clearTimeout(state.timer);
     if (signature === 'off') {
+      state.rendered = null;
+      state.curves = null;
+      state.compareRaw = false; // plus rien à comparer : on repasse en A
       this.engine.setPlaybackBuffer(trackId, null);
       this.#setStatus(trackId, 'idle');
       return;
@@ -145,15 +210,23 @@ export class VocalHub extends EventTarget {
       state.loaded = true;
     }
     try {
-      const { left, right } = await this.client.render(trackId, state.settings, this.tonality, (phase) => {
-        if (state.signature === signature) this.#setStatus(trackId, phase);
-      });
+      const { left, right, curves } = await this.client.render(
+        trackId,
+        state.settings,
+        this.trackTonality(trackId),
+        (phase) => {
+          if (state.signature === signature) this.#setStatus(trackId, phase);
+        },
+      );
       // Les réglages ont changé pendant le calcul : un autre rendu est déjà prévu.
       if (state.signature !== signature || !this.states.has(trackId)) return;
       const buffer = this.engine.ctx.createBuffer(2, left.length, track.buffer.sampleRate);
       buffer.copyToChannel(left, 0);
       buffer.copyToChannel(right, 1);
-      this.engine.setPlaybackBuffer(trackId, buffer);
+      state.rendered = buffer;
+      state.curves = curves;
+      // En écoute B (voix brute), le nouveau rendu attend qu'on repasse en A.
+      if (!state.compareRaw) this.engine.setPlaybackBuffer(trackId, buffer);
       this.#setStatus(trackId, 'ready');
     } catch (err) {
       console.error(err);

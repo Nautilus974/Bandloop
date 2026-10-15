@@ -8,11 +8,16 @@
 //                      vibrato et glissandos sont effacés (effet robot) ;
 //   - vitesse lente  : les mouvements rapides (vibrato, attaques) passent tels
 //                      quels, seules les notes tenues sont ramenées vers la justesse.
+// Option « préserver le vibrato » : la note visée et l'écart sont calculés sur
+// une hauteur LISSÉE (~150 ms) ; l'oscillation autour du centre de la note est
+// conservée même avec une correction rapide.
 import { diatonicShift, hzToMidi, nearestScaleNote, semitonesToRatio } from '../theory.js';
 
 // Hystérésis (en demi-tons) pour éviter que la note cible oscille entre deux
 // notes voisines quand le chanteur est pile entre les deux.
 const HYSTERESIS = 0.15;
+// Constante de temps du lissage qui sépare le vibrato (4-7 Hz) du centre de la note.
+const VIBRATO_SMOOTHING_MS = 150;
 
 /**
  * @param {{ f0: Float32Array, hop: number, sampleRate: number }} analysis
@@ -23,10 +28,11 @@ const HYSTERESIS = 0.15;
  * @param {number} p.speed          Temps de calage en ms (0 = instantané)
  * @param {number} p.strength       Intensité de la correction, 0..1
  * @param {number} p.shift          Transposition globale en demi-tons
+ * @param {boolean} [p.keepVibrato] Corriger le centre de la note sans aplatir le vibrato
  * @returns {{ inMidi: Float32Array, outMidi: Float32Array, noteMidi: Float32Array, leadRatio: Float32Array }}
  *   Valeurs NaN pour les trames non voisées (sauf leadRatio, qui y vaut la transposition seule).
  */
-export function buildLeadCurve(analysis, { correct, key, scale, speed, strength, shift }) {
+export function buildLeadCurve(analysis, { correct, key, scale, speed, strength, shift, keepVibrato = false }) {
   const n = analysis.f0.length;
   const inMidi = new Float32Array(n).fill(NaN);
   const outMidi = new Float32Array(n).fill(NaN);
@@ -34,9 +40,11 @@ export function buildLeadCurve(analysis, { correct, key, scale, speed, strength,
   const leadRatio = new Float32Array(n).fill(semitonesToRatio(shift));
   const hopSec = analysis.hop / analysis.sampleRate;
   const alpha = speed <= 0 ? 1 : 1 - Math.exp(-hopSec / (speed / 1000));
+  const smooth = 1 - Math.exp(-hopSec / (VIBRATO_SMOOTHING_MS / 1000));
 
   let note = null;
   let correction = 0;
+  let center = 0;
   for (let i = 0; i < n; i++) {
     const hz = analysis.f0[i];
     if (!hz) {
@@ -46,13 +54,16 @@ export function buildLeadCurve(analysis, { correct, key, scale, speed, strength,
     }
     const midi = hzToMidi(hz);
     inMidi[i] = midi;
+    // Hauteur de référence : instantanée, ou lissée pour laisser passer le vibrato.
+    center = note === null ? midi : center + smooth * (midi - center);
+    const ref = keepVibrato ? center : midi;
 
-    const candidate = nearestScaleNote(midi, key, scale);
-    if (note === null || Math.abs(midi - note) > Math.abs(midi - candidate) + HYSTERESIS) note = candidate;
+    const candidate = nearestScaleNote(ref, key, scale);
+    if (note === null || Math.abs(ref - note) > Math.abs(ref - candidate) + HYSTERESIS) note = candidate;
     noteMidi[i] = note;
 
     if (correct) {
-      const target = (note - midi) * strength;
+      const target = (note - ref) * strength;
       correction += alpha * (target - correction);
     } else {
       correction = 0;

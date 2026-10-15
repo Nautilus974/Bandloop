@@ -18,6 +18,7 @@ export class EditHistory extends EventTarget {
     this.capture = capture;
     this.restoreFn = restore;
     this.limit = limit;
+    this.mergeWindow = 1500;
     this.undoStack = [];
     this.redoStack = [];
   }
@@ -58,10 +59,22 @@ export class EditHistory extends EventTarget {
 
   /**
    * Enregistre une commande déjà exécutée.
+   * Avec `mergeKey`, une commande qui suit de près (moins de `mergeWindow` ms)
+   * une commande de même clé la prolonge au lieu de s'empiler : un curseur
+   * qu'on fait glisser donne UNE entrée « annuler », qui revient à la valeur
+   * d'avant le geste.
    * @param {{ label: string, undo: () => void, redo: () => void }} command
+   * @param {{ mergeKey?: string, now?: number }} [opts]
    */
-  push(command) {
-    this.undoStack.push(command);
+  push(command, { mergeKey, now = Date.now() } = {}) {
+    const last = this.undoStack.at(-1);
+    if (mergeKey && last?.mergeKey === mergeKey && now - last.time < this.mergeWindow && !this.redoStack.length) {
+      last.redo = command.redo;
+      last.time = now;
+      this.#emit();
+      return;
+    }
+    this.undoStack.push({ ...command, mergeKey, time: now });
     if (this.undoStack.length > this.limit) this.undoStack.shift();
     this.redoStack = [];
     this.#emit();

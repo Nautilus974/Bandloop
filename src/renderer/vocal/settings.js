@@ -4,8 +4,8 @@
 //  - l'étage de HAUTEUR (pitch, voice, harmony, vocoder, drone) est rendu hors
 //    temps réel dans un Worker, à partir de l'analyse de hauteur de la piste ;
 //  - la CHAÎNE (chain) est une liste ordonnée d'effets temps réel Web Audio.
-// La tonalité (key, scale) est réglée au niveau du morceau et n'est pas incluse
-// dans les presets.
+// La tonalité (key, scale) est réglée au niveau du morceau (une piste peut
+// avoir la sienne, voir VocalHub) et n'est pas incluse dans les presets.
 import { clamp } from '../audio/scheduling.js';
 import { FX_CATALOG } from './fx/catalog.js';
 import { SCALES } from './theory.js';
@@ -16,6 +16,8 @@ export const PITCH_PARAMS = [
   { key: 'correct', label: 'Correction', type: 'bool', default: false },
   { key: 'speed', label: 'Vitesse de calage', type: 'number', min: 0, max: 400, step: 1, default: 60, unit: 'ms' },
   { key: 'strength', label: 'Intensité', type: 'number', min: 0, max: 100, step: 1, default: 100, unit: '%' },
+  // La correction vise le centre de la note (hauteur lissée) : le vibrato passe tel quel.
+  { key: 'keepVibrato', label: 'Préserver le vibrato', type: 'bool', default: false },
   { key: 'shift', label: 'Transposition', type: 'number', min: -24, max: 24, step: 1, default: 0, unit: 'dt' },
   { key: 'formant', label: 'Formants', type: 'number', min: -12, max: 12, step: 0.5, default: 0, unit: 'dt' },
 ];
@@ -32,6 +34,17 @@ export const HARMONY_VOICE_PARAMS = [
   { key: 'delay', label: 'Décalage', type: 'number', min: 0, max: 80, step: 1, default: 0, unit: 'ms' },
 ];
 export const MAX_HARMONY_VOICES = 4;
+/** Niveau commun à toutes les voix d'harmonie (s'ajoute au niveau de chaque voix). */
+export const HARMONY_LEVEL = {
+  key: 'level',
+  label: 'Niveau des harmonies',
+  type: 'number',
+  min: -40,
+  max: 6,
+  step: 0.5,
+  default: 0,
+  unit: 'dB',
+};
 
 export const VOCODER_CHORDS = {
   unison: { label: 'Unisson', notes: [0] },
@@ -122,6 +135,7 @@ export function normalizeSettings(raw = {}) {
     harmony: {
       enabled: harmony.enabled === true,
       mode: harmony.mode === 'chromatic' ? 'chromatic' : 'diatonic',
+      level: normalizeValue(HARMONY_LEVEL, harmony.level),
       voices: (Array.isArray(harmony.voices) ? harmony.voices : [])
         .slice(0, MAX_HARMONY_VOICES)
         .map((v) => normalizeParams(HARMONY_VOICE_PARAMS, v)),

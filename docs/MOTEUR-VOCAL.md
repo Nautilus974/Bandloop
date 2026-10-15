@@ -28,6 +28,87 @@ par piste.
 
 La **tonalité** (tonique et gamme) est réglée pour tout le morceau et ne fait
 pas partie des presets : un preset fonctionne dans n'importe quelle tonalité.
+Une piste peut avoir **sa propre tonalité** (voir ci-dessous).
+
+## Correction de voix : réglages manuels
+
+![Section « Correction de voix »](screenshots/correction-voix.png)
+
+La section **Correction de voix** du panneau FX regroupe tout ce qu'on règle
+d'habitude dans un autotune. Un preset remplit ces réglages, qu'on peut
+ensuite modifier à la main.
+
+| Réglage                | Effet                                                                                                                                                                                                                                                                             |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Interrupteur           | Active la correction (le reste des effets n'est pas touché)                                                                                                                                                                                                                       |
+| **Vitesse de calage**  | Temps mis pour ramener la voix sur la note : 0 ms = **robot** (saut de note en note, vibrato effacé), ~20 ms rapide (pop moderne), ~80 ms **naturel**, 200 ms et plus **doux**. Curseur à échelle « racine » : un tiers de sa course couvre 0-45 ms, là où l'effet change le plus |
+| **Intensité (dosage)** | Part de l'écart corrigée : 0 % = voix brute, 50 % = moitié du chemin, 100 % = note juste. C'est un dosage de la **hauteur**, pas un mélange de deux signaux : pas d'effet de phase ni de doublage                                                                                 |
+| Préserver le vibrato   | La note visée et l'écart sont calculés sur la hauteur lissée (~150 ms) : le centre de la note est corrigé, l'oscillation du vibrato passe telle quelle, même à vitesse robot                                                                                                      |
+| **Écoute A / B**       | A = voix corrigée, B = voix brute (sans correction ni harmonies ; la chaîne d'effets reste active). Simple écoute : rien n'est modifié, enregistré ni exporté autrement                                                                                                           |
+| Tonalité               | Celle du morceau par défaut ; la case « Tonalité propre à cette piste » donne à la piste sa tonique et sa gamme (ex. un chœur dans une autre gamme)                                                                                                                               |
+| Harmonies              | Interrupteur (la première activation ajoute une voix à la tierce) et **niveau commun** à toutes les voix ; intervalles et panoramiques dans la section « Harmonies »                                                                                                              |
+
+- **Note chantée → note visée** : au-dessus des curseurs, la note chantée à
+  la tête de lecture, son écart en cents (turquoise sous 25 cents, ambre
+  au-delà) et la note visée. En dessous, les 4 secondes autour de la tête :
+  - lignes de la gamme ;
+  - voix chantée (gris) ;
+  - voix corrigée (citron).
+- **Presets** : dès qu'un réglage s'écarte du preset, la mention « modifié »
+  apparaît, avec « Revenir au preset » et « Enregistrer sous… » (nouveau
+  preset personnel). La tonalité n'est jamais enregistrée dans un preset.
+- **Annulation** : tous ces réglages, et ceux du reste du panneau FX, entrent
+  dans l'historique (Ctrl/⌘+Z).
+  - Les mouvements d'un même curseur à moins de 1,5 s d'intervalle forment
+    une seule entrée, qui revient à la valeur d'avant le geste.
+  - La tonalité du morceau est aussi annulable.
+  - L'écoute A/B ne l'est pas, ce n'est pas une modification.
+- **Pendant un enregistrement**, le panneau est grisé et bloqué ; l'annulation
+  aussi.
+- **Projet** : réglages manuels, tonalité propre à la piste, preset et
+  contournement sont enregistrés. L'écoute A/B ne l'est pas : on rouvre
+  toujours en A.
+
+### Ce qui n'est pas proposé
+
+- **Retouche note par note** (déplacer une note précise, comme dans un éditeur
+  graphique) : il faudrait segmenter la voix en notes et éditer une courbe à
+  la souris. C'est un éditeur à part entière, laissé de côté.
+- **Limites basse / haute de détection** : la plage (70-1100 Hz) est fixée
+  dans l'analyse, faite une seule fois par piste et mise en cache. La rendre
+  réglable relancerait l'analyse complète à chaque changement : non ajouté.
+- **Correction en direct au micro** : la correction se calcule après la prise,
+  comme le reste de l'étage de hauteur.
+
+### Temps de recalcul
+
+Mesuré dans le conteneur de test (sans carte graphique), délai de 250 ms
+après le dernier changement compris :
+
+| Voix  | 1er calcul (avec analyse) | Changer la vitesse | Ajouter une harmonie |
+| ----- | ------------------------- | ------------------ | -------------------- |
+| 16 s  | 0,7 s                     | 0,3 s              | 0,4 s                |
+| 3 min | 4,6 s                     | 1,1 s              | 1,9 s                |
+
+- Pendant le calcul, la piste continue de jouer l'ancien rendu : le changement
+  s'entend quand le statut repasse à « À jour ».
+- Chaque voix d'harmonie ajoute une resynthèse complète.
+- L'affichage des notes suit le dernier rendu : pendant un recalcul, il
+  montre encore l'ancien.
+
+### Lisibilité du retour visuel
+
+- Il n'y a pas d'affichage **en direct au micro** : les notes viennent de
+  l'analyse de la piste enregistrée.
+- Les **consonnes et souffles** n'ont pas de hauteur : la courbe s'interrompt
+  et le texte indique « Pas de note chantée ».
+- Sur une voix très **soufflée ou saturée**, la détection peut sauter d'une
+  octave sur quelques trames ; la courbe montre alors un pic isolé.
+- La fenêtre de 4 s s'adapte à la hauteur des notes visibles. Un grand saut
+  d'octave tasse donc les lignes de la gamme ; certains noms de notes sont
+  masqués pour ne pas se chevaucher.
+- Les noms de notes utilisent une orthographe fixe (Mi♭, La♭, Si♭) quelle que
+  soit la gamme : un Sol♯ de La mineur harmonique s'affiche « La♭ ».
 
 ## Étage de hauteur : briques et algorithmes
 

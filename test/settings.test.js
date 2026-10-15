@@ -87,3 +87,12 @@ test('normalizeTonality', () => {
   assert.deepEqual(normalizeTonality({ key: 9, scale: 'minor' }), { key: 9, scale: 'minor' });
   assert.deepEqual(normalizeTonality({ key: 14, scale: 'x' }), { key: 0, scale: 'major' });
 });
+
+test('nouveaux réglages : vibrato et niveau des harmonies, avec valeurs par défaut pour les anciens projets', () => {
+  const old = normalizeSettings({ pitch: { correct: true }, harmony: { enabled: true, voices: [{ interval: 2 }] } });
+  assert.equal(old.pitch.keepVibrato, false);
+  assert.equal(old.harmony.level, 0);
+  const s = normalizeSettings({ pitch: { keepVibrato: true }, harmony: { level: -99 } });
+  assert.equal(s.pitch.keepVibrato, true);
+  assert.equal(s.harmony.level, -40);
+});

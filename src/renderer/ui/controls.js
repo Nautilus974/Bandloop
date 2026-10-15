@@ -5,15 +5,21 @@ import { h } from './dom.js';
 
 const SLIDER_STEPS = 1000;
 
-/** Position 0..1 du curseur pour une valeur (échelle logarithmique si demandé). */
+/**
+ * Position 0..1 du curseur pour une valeur. Échelles : linéaire, 'log' (fréquences,
+ * temps) ou 'sqrt' (plus de précision près du minimum, ex. vitesse de calage).
+ */
 export function toSlider(param, value) {
   if (param.scale === 'log') return Math.log(value / param.min) / Math.log(param.max / param.min);
-  return (value - param.min) / (param.max - param.min);
+  const t = (value - param.min) / (param.max - param.min);
+  return param.scale === 'sqrt' ? Math.sqrt(Math.max(0, t)) : t;
 }
 
 export function fromSlider(param, t) {
-  const raw =
-    param.scale === 'log' ? param.min * Math.pow(param.max / param.min, t) : param.min + t * (param.max - param.min);
+  let raw;
+  if (param.scale === 'log') raw = param.min * Math.pow(param.max / param.min, t);
+  else if (param.scale === 'sqrt') raw = param.min + t * t * (param.max - param.min);
+  else raw = param.min + t * (param.max - param.min);
   return normalizeValue(param, raw);
 }
 

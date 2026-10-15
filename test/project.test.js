@@ -43,7 +43,13 @@ const state = {
         sampleRate: 1000,
         frames: 1000,
       },
-      vocal: { presetId: 'studio', presetName: 'Studio', bypass: false, settings },
+      vocal: {
+        presetId: 'studio',
+        presetName: 'Studio',
+        bypass: false,
+        settings,
+        tonality: { key: 9, scale: 'minor' },
+      },
     },
     {
       name: 'Prise 1',
@@ -54,7 +60,7 @@ const state = {
       muted: true,
       solo: false,
       audio: { path: 'audio/02-prise-1.flac', origin: 'take', codec: 'flac', originalName: 'Prise 1', frames: 2000 },
-      vocal: { presetId: null, presetName: null, bypass: true, settings: normalizeSettings({}) },
+      vocal: { presetId: null, presetName: null, bypass: true, settings: normalizeSettings({}), tonality: null },
     },
   ],
 };

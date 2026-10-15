@@ -198,3 +198,24 @@ test('historique : commandes (annuler / refaire) mêlées aux instantanés', () 
   h.push({ label: 'Couleur', undo: () => {}, redo: () => {} });
   assert.equal(h.canRedo, false, 'une nouvelle commande efface « Rétablir »');
 });
+
+test('historique : un geste continu (même clé, rapproché) donne une seule entrée', () => {
+  let v = 0;
+  const h = new EditHistory({ capture: () => null, restore: () => {} });
+  const set = (from, to, now, mergeKey = 'speed') =>
+    h.push({ label: 'Vitesse', undo: () => (v = from), redo: () => (v = to) }, { mergeKey, now });
+  v = 10;
+  set(0, 10, 1000);
+  v = 20;
+  set(10, 20, 1100);
+  v = 35;
+  set(20, 35, 1300);
+  assert.equal(h.undoStack.length, 1);
+  h.undo();
+  assert.equal(v, 0, 'retour à la valeur d’avant le geste');
+  h.redo();
+  assert.equal(v, 35, 'rétablir donne la valeur finale');
+  set(35, 40, 9000); // longtemps après : nouvelle entrée
+  set(40, 50, 9100, 'strength'); // autre réglage : nouvelle entrée
+  assert.equal(h.undoStack.length, 3);
+});
